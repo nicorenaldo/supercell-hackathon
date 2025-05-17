@@ -24,7 +24,7 @@ class VideoRecorder:
         width: int = 640,
         height: int = 480,
         fps: int = 30,
-        output_dir: str = "recordings/video",
+        output_dir: str = "recordings",
     ):
         """
         Initialize the video recorder with the given parameters.
@@ -40,17 +40,14 @@ class VideoRecorder:
         self.fps = fps
         self.output_dir = output_dir
 
-        # Create output directory if it doesn't exist
         os.makedirs(self.output_dir, exist_ok=True)
-        os.makedirs(os.path.join(self.output_dir, "frames"), exist_ok=True)
-        os.makedirs(os.path.join(self.output_dir, "audio"), exist_ok=True)
 
-        # Video capture and recording variables
         self.cap = None
         self.writer = None
         self.is_recording = False
         self.recording_thread = None
         self.audio_thread = None
+        self.current_game_id = None
         self.current_recording_id = None
         self.last_frame = None
         self.audio_process = None
@@ -61,11 +58,31 @@ class VideoRecorder:
 
         logger.info("Video recorder initialized")
 
-    def _record_video(self):
+    def _get_recording_dir(self, game_id: str, recording_id: str) -> str:
+        """
+        Get the directory path for a specific recording
+
+        Args:
+            recording_id: Unique identifier for the recording
+
+        Returns:
+            Path to the recording directory
+        """
+        if not game_id:
+            raise ValueError("Game ID is not set")
+        if not recording_id:
+            raise ValueError("Recording ID is not set")
+
+        recording_dir = os.path.join(self.output_dir, game_id, recording_id)
+        os.makedirs(recording_dir, exist_ok=True)
+        os.makedirs(os.path.join(recording_dir, "frames"), exist_ok=True)
+        return recording_dir
+
+    def _record_video(self, recording_dir: str):
         """
         Internal function to record video in a background thread
         """
-        logger.info(f"Started recording video: {self.current_recording_id}")
+        logger.info(f"Started recording video: {self.current_recording_id} in {recording_dir}")
 
         frame_count = 0
         start_time = time.time()
@@ -78,22 +95,11 @@ class VideoRecorder:
                 time.sleep(0.1)
                 continue
 
-            # Store the latest frame for emotion detection
             self.last_frame = frame.copy()
-
-            # Write frame to video
             self.writer.write(frame)
-
-            # Save frame for emotion detection at reduced frequency (every 15 frames = 0.5s at 30fps)
-            if frame_count % 15 == 0:
-                frame_filename = os.path.join(
-                    self.output_dir, "frames", f"{self.current_recording_id}_{frame_count}.jpg"
-                )
-                cv2.imwrite(frame_filename, frame)
 
             frame_count += 1
 
-            # Calculate time to sleep to maintain desired FPS
             elapsed = time.time() - start_time
             expected_frame_time = frame_count / self.fps
             sleep_time = max(0, expected_frame_time - elapsed)
@@ -103,7 +109,7 @@ class VideoRecorder:
 
         logger.info(f"Stopped recording video after {frame_count} frames")
 
-    def _record_audio(self):
+    def _record_audio(self, recording_dir: str):
         """
         Record audio from microphone in a separate thread using ffmpeg
         """
@@ -111,10 +117,7 @@ class VideoRecorder:
 
         if is_macos:
             try:
-                # Create audio file path
-                self.audio_filename = os.path.join(
-                    self.output_dir, "audio", f"{self.current_recording_id}.wav"
-                )
+                self.audio_filename = os.path.join(recording_dir, "audio.wav")
 
                 # For macOS, use ffmpeg to record from default input device
                 # Using format avfoundation for macOS
@@ -174,7 +177,7 @@ class VideoRecorder:
         """
         return self.last_frame
 
-    def start_recording(self, recording_id: str) -> Dict[str, Any]:
+    def start_recording(self, game_id: str, recording_id: str) -> Dict[str, Any]:
         """
         Start recording video
 
@@ -189,6 +192,8 @@ class VideoRecorder:
             self.stop_recording()
 
         try:
+            recording_dir = self._get_recording_dir(game_id, recording_id)
+
             # Initialize video capture
             # For macOS, try multiple camera indices with preference for FaceTime camera
             camera_index = 0
@@ -239,28 +244,35 @@ class VideoRecorder:
                 raise ValueError("Could not open webcam")
 
             # Initialize video writer with H.264 codec for better compatibility
-            filename = os.path.join(self.output_dir, f"{recording_id}.mp4")
+            filename = os.path.join(recording_dir, f"{recording_id}.mp4")
             self.writer = cv2.VideoWriter(
                 filename, self.fourcc, self.fps, (self.width, self.height)
             )
 
             # Set recording variables
             self.is_recording = True
+            self.current_game_id = game_id
             self.current_recording_id = recording_id
+            self.video_filename = filename
 
             # Start recording thread for video
-            self.recording_thread = threading.Thread(target=self._record_video)
+            self.recording_thread = threading.Thread(
+                target=self._record_video, args=(recording_dir,)
+            )
             self.recording_thread.daemon = True
             self.recording_thread.start()
 
             # Start recording thread for audio (if on macOS)
             if is_macos:
-                self.audio_thread = threading.Thread(target=self._record_audio)
+                self.audio_thread = threading.Thread(
+                    target=self._record_audio, args=(recording_dir,)
+                )
                 self.audio_thread.daemon = True
                 self.audio_thread.start()
 
             return {
                 "status": "recording",
+                "game_id": game_id,
                 "recording_id": recording_id,
                 "filename": filename,
                 "timestamp": time.time(),
@@ -294,7 +306,6 @@ class VideoRecorder:
             self.audio_thread.join(timeout=2.0)
 
         recording_id = self.current_recording_id
-        filename = os.path.join(self.output_dir, f"{recording_id}.mp4")
 
         # Clean up resources
         if self.writer:
@@ -307,15 +318,15 @@ class VideoRecorder:
 
         # Merge audio with video if audio was recorded
         if self.audio_filename and os.path.exists(self.audio_filename):
-            self._merge_audio_with_video(filename, self.audio_filename)
+            self._merge_audio_with_video(self.video_filename, self.audio_filename)
         else:
             # Add silent audio track if no audio was recorded
-            self._add_audio_to_video_mac(filename)
+            self._add_audio_to_video_mac(self.video_filename)
 
         return {
             "status": "completed",
             "recording_id": recording_id,
-            "filename": filename,
+            "filename": self.video_filename,
             "timestamp": time.time(),
         }
 
@@ -331,7 +342,15 @@ class VideoRecorder:
             with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file:
                 temp_output = temp_file.name
 
-            # Run ffmpeg to merge audio and video
+            # Get video file info to check if it exists and is valid
+            probe_cmd = ["ffmpeg", "-i", video_path, "-v", "quiet", "-c", "copy", "-f", "null", "-"]
+            try:
+                subprocess.run(probe_cmd, check=True, stderr=subprocess.PIPE)
+            except subprocess.CalledProcessError:
+                logger.error(f"Invalid video file: {video_path}")
+                return
+
+            # Run ffmpeg to merge audio and video with more verbose output
             cmd = [
                 "ffmpeg",
                 "-i",
@@ -342,6 +361,8 @@ class VideoRecorder:
                 "copy",  # Copy video stream
                 "-c:a",
                 "aac",  # Convert audio to AAC
+                "-strict",
+                "experimental",  # Allow experimental codecs
                 "-map",
                 "0:v:0",  # Use video from first input
                 "-map",
@@ -351,7 +372,10 @@ class VideoRecorder:
                 temp_output,
             ]
 
-            subprocess.run(cmd, check=True, capture_output=True)
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                logger.error(f"ffmpeg merge error: {result.stderr}")
+                raise subprocess.CalledProcessError(result.returncode, cmd)
 
             # Replace original file with the new one
             os.replace(temp_output, video_path)
@@ -379,8 +403,15 @@ class VideoRecorder:
             with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file:
                 temp_output = temp_file.name
 
-            # Run ffmpeg to add audio from microphone to the video
-            # This creates a new video file with both video and audio
+            # Get video file info
+            probe_cmd = ["ffmpeg", "-i", video_path, "-v", "quiet", "-c", "copy", "-f", "null", "-"]
+            try:
+                subprocess.run(probe_cmd, check=True, stderr=subprocess.PIPE)
+            except subprocess.CalledProcessError:
+                logger.error(f"Invalid video file: {video_path}")
+                return
+
+            # Run ffmpeg to add silent audio track to the video
             cmd = [
                 "ffmpeg",
                 "-i",
@@ -393,12 +424,17 @@ class VideoRecorder:
                 "copy",  # Copy video stream
                 "-c:a",
                 "aac",  # Use AAC for audio
+                "-strict",
+                "experimental",  # Allow experimental codecs
                 "-shortest",  # End when shortest input ends
                 "-y",  # Overwrite if exists
                 temp_output,
             ]
 
-            subprocess.run(cmd, check=True, capture_output=True)
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                logger.error(f"ffmpeg silent audio error: {result.stderr}")
+                raise subprocess.CalledProcessError(result.returncode, cmd)
 
             # Replace original file with the new one
             os.replace(temp_output, video_path)

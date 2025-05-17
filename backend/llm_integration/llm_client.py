@@ -4,6 +4,7 @@ from typing import Dict, Any
 from openai import OpenAI
 
 from models import (
+    Achievement,
     DialogInput,
     GameStage,
     GameState,
@@ -64,13 +65,13 @@ class LLMClient:
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "npc_id": {
-                                    "type": "string",
-                                    "description": "The NPC ID",
-                                },
                                 "dialog": {
                                     "type": "string",
                                     "description": "The NPC's next line of dialog",
+                                },
+                                "npc_id": {
+                                    "type": "string",
+                                    "description": "The ID of the NPC that is speaking",
                                 },
                                 "suspicion_level": {
                                     "type": "number",
@@ -116,6 +117,11 @@ class LLMClient:
                                     },
                                     "description": "Dynamically generated achievements based on the player's actions and emotions",
                                 },
+                                "analysis": {
+                                    "type": "string",
+                                    "description": "Analysis of the game when it's over, what the player did well and what they could have done better",
+                                    "nullable": True,
+                                },
                             },
                             "required": ["dialog", "internal_state", "game_status"],
                         },
@@ -131,12 +137,20 @@ class LLMClient:
                 result = json.loads(function_call.arguments)
                 logger.info(f"Generated response: {result['dialog'][:50]}...")
                 return LLMResponse(
+                    npc_id=result["npc_id"],
                     dialog=result["dialog"],
                     suspicion_level=result["suspicion_level"],
-                    stage=result["stage"],
+                    stage=GameStage(result["stage"]),
                     continue_story=result["continue_story"],
                     ending_type=result["ending_type"],
-                    achievement_unlocked=result.get("achievement_unlocked", None),
+                    achievement_unlocked=[
+                        Achievement(
+                            name=ach["name"],
+                            description=ach["description"],
+                        )
+                        for ach in result.get("achievement_unlocked", [])
+                    ],
+                    analysis=result.get("analysis", None),
                 )
             else:
                 logger.warning("Function calling failed, using fallback")

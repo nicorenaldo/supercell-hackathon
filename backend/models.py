@@ -49,11 +49,13 @@ class LLMResponse(BaseModel):
     """Model for the structured response from the LLM"""
 
     dialog: str
+    npc_id: str
     suspicion_level: int
     stage: GameStage
     continue_story: bool
     ending_type: Optional[EndingType] = None
     achievement_unlocked: Optional[List[Achievement]] = None
+    analysis: Optional[str] = None
 
     @property
     def is_game_over(self) -> bool:
@@ -64,20 +66,22 @@ class GameResponse(BaseModel):
     """Response sent back to the frontend"""
 
     dialog: str  # Dialog to read for the NPC
+    npc_id: str  # ID of the NPC that is speaking
+    suspicion_level: int  # Suspicion level of the NPC
     game_over: bool = False  # Whether the game is over
     ending_type: Optional[EndingType] = None  # Type of ending if game is over
     achievements: List[Achievement] = Field(default_factory=list)  # Achievements that were unlocked
-    next_stage: Optional[GameStage] = None  # Next scene to play
-    analysis: Optional[Dict[str, Any]] = None  # Analysis of the game when it's over
+    analysis: Optional[str] = None  # Analysis of the game when it's over
 
     @model_serializer
     def serialize_model(self) -> Dict[str, Any]:
         return {
             "dialog": self.dialog,
+            "npc_id": self.npc_id,
+            "suspicion_level": self.suspicion_level,
             "game_over": self.game_over,
             "ending_type": self.ending_type.value if self.ending_type else None,
-            "achievements": [ach.dict() for ach in self.achievements],
-            "next_stage": self.next_stage.value if self.next_stage else None,
+            "achievements": [ach.model_dump() for ach in self.achievements],
             "analysis": self.analysis,
         }
 

@@ -36,10 +36,11 @@ class RecordingManager:
 
         self.current_recording_id: Optional[str] = None
         self.is_recording: bool = False
+        self.recording_counter: Dict[str, int] = {}
 
         logger.info("Recording manager initialized")
 
-    def start_recording(self) -> Dict[str, Any]:
+    def start_recording(self, game_id: str) -> Dict[str, Any]:
         """
         Start a new recording session for video
 
@@ -50,8 +51,13 @@ class RecordingManager:
             logger.warning("Already recording, stopping current session first")
             self.stop_recording()
 
-        self.current_recording_id = str(uuid.uuid4())
-        self.video_recorder.start_recording(self.current_recording_id)
+        if game_id not in self.recording_counter:
+            self.recording_counter[game_id] = 0
+
+        self.recording_counter[game_id] += 1
+
+        self.current_recording_id = f"recording_{self.recording_counter[game_id]}"
+        self.video_recorder.start_recording(game_id, self.current_recording_id)
         self.is_recording = True
 
         return RecordingStatus(
@@ -68,7 +74,7 @@ class RecordingManager:
         """
         if not self.is_recording:
             logger.warning("Not currently recording")
-            return RecordingResult(recording_id="none")
+            return RecordingResult(recording_id="none", file_path=None)
 
         recording_id = self.current_recording_id
         video_result = self.video_recorder.stop_recording()

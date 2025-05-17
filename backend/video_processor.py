@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class VideoProcessor:
     """Main class for processing video files and extracting dialog and emotions"""
 
-    def __init__(self, output_folder: str = "frames"):
+    def __init__(self, output_folder: str = "recordings"):
         """
         Initialize the video processor
 
@@ -163,6 +163,7 @@ class VideoProcessor:
         Returns:
             List of tuples containing frame paths, start time, end time, and text
         """
+        video_base_dir = os.path.dirname(video_path)
         video = cv2.VideoCapture(video_path)
         fps = video.get(cv2.CAP_PROP_FPS)
 
@@ -200,12 +201,15 @@ class VideoProcessor:
                 timestamps = [start_time + (duration * j / (n - 1)) for j in range(n)]
 
             # Extract frames at calculated timestamps
+            frame_dir = os.path.join(video_base_dir, "frames")
+            os.makedirs(frame_dir, exist_ok=True)
+
             for j, timestamp in enumerate(timestamps):
                 frame_num = int(timestamp * fps)
                 video.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
                 ret, frame = video.read()
                 if ret:
-                    path = f"{self.output_folder}/frame_{i}_{j}.jpg"
+                    path = f"{frame_dir}/frame_{i}_{j}.jpg"
                     cv2.imwrite(path, frame)
                     segment_frames.append(path)
 
@@ -286,10 +290,6 @@ class VideoProcessor:
         Returns:
             DialogInput object with extracted dialog and emotions
         """
-        # Ensure the video path is absolute
-        if not os.path.isabs(video_path):
-            video_path = os.path.abspath(video_path)
-
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Video file not found: {video_path}")
 

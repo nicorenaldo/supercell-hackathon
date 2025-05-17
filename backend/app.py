@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import logging
 
-from models import GameResponse, GameStage
+from models import GameResponse
 from engine import GameEngine
 from llm_integration.llm_client import LLMClient
 from recording_manager.manager import RecordingManager, RecordingResult, RecordingStatus
@@ -45,16 +45,16 @@ async def start_game():
     game_id, initial_dialog = game_engine.create_new_game()
     if websocket_connection:
         # Send dialog to start the convo
-        await websocket_connection.send_text(f"new_game:{game_id}")
-        await websocket_connection.send_json({"monolog": initial_dialog})
-    return {"game_id": game_id, "initial_dialog": initial_dialog}
+        await websocket_connection.send_json({"game_id": game_id})
+        await websocket_connection.send_json({"dialog": initial_dialog})
+    return {"game_id": game_id, "dialog": initial_dialog}
 
 
 @app.post("/recording/start")
 async def start_recording():
     """Start recording audio and video"""
     try:
-        result = recording_manager.start_recording()
+        result = recording_manager.start_recording(game_engine.current_game_id)
         return result
     except Exception as e:
         logger.error(f"Error starting recording: {str(e)}")
@@ -66,6 +66,8 @@ async def stop_recording():
     """Stop recording and start processing the results asynchronously"""
     try:
         result = recording_manager.stop_recording()
+        if not result.file_path:
+            raise Exception("No recording started")
         asyncio.create_task(process_recording(result))
         return result
     except Exception as e:
@@ -78,16 +80,13 @@ async def process_recording(recording_result: RecordingResult):
 
     game_response: GameResponse = game_engine.process_recording(recording_result)
     if websocket_connection:
-        if game_response.dialog:
-            await websocket_connection.send_json(
-                {
-                    "dialog": game_response.dialog,
-                }
-            )
         if game_response.game_over:
             await websocket_connection.send_json(
                 {
                     "game_over": True,
+                    "ending_type": game_response.ending_type.value,
+                    "suspicion_level": game_response.suspicion_level,
+                    "analysis": game_response.analysis,
                 }
             )
         if game_response.achievements:
@@ -98,10 +97,12 @@ async def process_recording(recording_result: RecordingResult):
                     ],
                 }
             )
-        if game_response.next_stage:
+        if game_response.dialog:
             await websocket_connection.send_json(
                 {
-                    "next_stage": game_response.next_stage.value,
+                    "dialog": game_response.dialog,
+                    "npc_id": game_response.npc_id,
+                    "suspicion_level": game_response.suspicion_level,
                 }
             )
 

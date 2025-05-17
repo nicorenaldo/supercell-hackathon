@@ -49,6 +49,10 @@ class GameEngine:
 
         logger.info("Game engine initialized")
 
+    @property
+    def current_game_id(self) -> Optional[str]:
+        return self.current_state.game_id if self.current_state else None
+
     def create_new_game(self) -> Tuple[str, str]:
         """
         Create a new game session
@@ -118,7 +122,11 @@ class GameEngine:
             self.current_state.suspicion_level = llm_result.suspicion_level
             self.current_state.game_over = llm_result.is_game_over
             self.current_state.dialog_history.append(
-                {"role": "system", "content": llm_result.dialog}
+                {
+                    "role": "system",
+                    "content": llm_result.dialog,
+                    "npc_id": llm_result.npc_id,
+                }
             )
 
             # Process dynamic achievements from LLM response
@@ -134,11 +142,12 @@ class GameEngine:
 
             response = GameResponse(
                 dialog=llm_result.dialog,
+                npc_id=llm_result.npc_id,
+                suspicion_level=llm_result.suspicion_level,
                 game_over=llm_result.is_game_over,
                 ending_type=llm_result.ending_type,
                 achievements=new_achievements,
-                next_stage=llm_result.stage,
-                analysis=None,  # TODO: Add analysis only if game is over
+                analysis=llm_result.analysis,
             )
 
             return response
@@ -146,7 +155,10 @@ class GameEngine:
             logger.error(f"Error processing recording: {e}")
             return GameResponse(
                 dialog="Error: Failed to process recording",
+                npc_id="error",
+                suspicion_level=0,
                 game_over=True,
                 ending_type=EndingType.ERROR,
                 achievements=[],
+                analysis=str(e),
             )
