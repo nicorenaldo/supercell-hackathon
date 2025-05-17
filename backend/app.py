@@ -6,11 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import logging
 
+from models import GameResponse, GameStage
 from speech2text.speech2text import Speech2Text
-from models import RecordingStatus
 from engine import GameEngine
 from llm_integration.llm_client import LLMClient
-from recording_manager.manager import RecordingManager, RecordingResult
+from recording_manager.manager import RecordingManager, RecordingResult, RecordingStatus
 from emotion_detector.detector import EmotionDetector
 
 load_dotenv()
@@ -27,8 +27,8 @@ app.add_middleware(
 speech2text = Speech2Text()
 emotion_detector = EmotionDetector()
 llm_client = LLMClient(api_key=os.getenv("OPENAI_API_KEY"))
-game_engine = GameEngine(llm_client)
-recording_manager = RecordingManager(emotion_detector=emotion_detector, speech_parser=speech2text)
+game_engine = GameEngine(llm_client, emotion_detector, speech2text)
+recording_manager = RecordingManager()
 
 websocket_connection: Optional[WebSocket] = None
 
@@ -77,10 +77,36 @@ async def stop_recording():
 async def process_recording(recording_result: RecordingResult):
     """Process the recording and send the results to the websocket"""
 
-    # TODO: Send the response from the game engine to the websocket
-    game_engine.process_recording(recording_result)
+    game_response: GameResponse = game_engine.process_recording(recording_result)
     if websocket_connection:
-        await websocket_connection.send_text(f"recording_processed:{recording_result.recording_id}")
+        if game_response.dialog:
+            await websocket_connection.send_json(
+                {
+                    "dialog": game_response.dialog,
+                }
+            )
+        if game_response.game_over:
+            await websocket_connection.send_json(
+                {
+                    "game_over": game_response.game_over,
+                }
+            )
+        if game_response.achievements:
+            await websocket_connection.send_json(
+                {
+                    "achievements": game_response.achievements,
+                }
+            )
+        if game_response.next_scene:
+            await websocket_connection.send_json(
+                {
+                    "next_scene": (
+                        game_response.next_scene.value
+                        if isinstance(game_response.next_scene, GameStage)
+                        else game_response.next_scene
+                    ),
+                }
+            )
 
 
 @app.websocket("/ws")
