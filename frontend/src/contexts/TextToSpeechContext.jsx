@@ -11,7 +11,6 @@ const TextToSpeechContext = createContext();
 
 export const TextToSpeechProvider = ({ children }) => {
   const [isSpeechEnabled, setIsSpeechEnabled] = useState(true);
-  const [pendingAudio, setPendingAudio] = useState([]);
   const [userInteracted, setUserInteracted] = useState(false);
   const tts = useTextToSpeech();
 
@@ -33,48 +32,41 @@ export const TextToSpeechProvider = ({ children }) => {
     };
   }, []);
 
-  // Process pending audio once user has interacted
-  useEffect(() => {
-    if (userInteracted && pendingAudio.length > 0) {
-      const playNext = async () => {
-        const audioElement = pendingAudio[0];
-        try {
-          await audioElement.play();
-        } catch (error) {
-          console.error('Failed to play audio:', error);
-        }
-        setPendingAudio((prev) => prev.slice(1));
-      };
-
-      playNext();
-    }
-  }, [userInteracted, pendingAudio]);
-
   const speakText = useCallback(
-    async (text) => {
+    (text, npcId = 'default') => {
       if (!isSpeechEnabled || !text) return;
 
-      const audio = await tts.synthesizeSpeech(text);
-      if (audio) {
-        try {
-          if (userInteracted) {
-            await audio.play();
-          } else {
-            setPendingAudio((prev) => [...prev, audio]);
-          }
-        } catch (error) {
-          console.error('Audio play error:', error);
-          setPendingAudio((prev) => [...prev, audio]);
-        }
+      if (userInteracted) {
+        // Use the queue system directly
+        tts.queueAudio(text, npcId);
+      } else {
+        // Store callback to execute once user interacts
+        const handler = () => {
+          tts.queueAudio(text, npcId);
+          window.removeEventListener('click', handler);
+          window.removeEventListener('keydown', handler);
+          window.removeEventListener('touchstart', handler);
+        };
+
+        window.addEventListener('click', handler);
+        window.addEventListener('keydown', handler);
+        window.addEventListener('touchstart', handler);
       }
     },
     [isSpeechEnabled, tts, userInteracted]
   );
 
   const toggleSpeech = useCallback(() => {
-    setIsSpeechEnabled((prev) => !prev);
+    setIsSpeechEnabled((prev) => {
+      const newValue = !prev;
+      if (!newValue) {
+        // If disabling speech, stop any current audio
+        tts.stopAudio();
+      }
+      return newValue;
+    });
     setUserInteracted(true); // Mark as interacted when user toggles speech
-  }, []);
+  }, [tts]);
 
   return (
     <TextToSpeechContext.Provider
@@ -84,7 +76,10 @@ export const TextToSpeechProvider = ({ children }) => {
         speakText,
         isLoading: tts.isLoading,
         error: tts.error,
+        isPlaying: tts.isPlaying,
         userInteracted,
+        stopAudio: tts.stopAudio,
+        clearQueue: tts.clearQueue,
       }}
     >
       {children}

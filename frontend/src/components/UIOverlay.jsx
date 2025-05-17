@@ -10,11 +10,13 @@ import { GameOverModal } from './GameOverModal';
 export const UIOverlay = () => {
   const [messageProcessed, setMessageProcessed] = useState(0);
   const { isConnected, messages } = useWebsocket();
-  const { speakText } = useTextToSpeechContext();
+  const { speakText, clearQueue } = useTextToSpeechContext();
   const { startGame } = useGameApi();
   const [gameStarted, setGameStarted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [gameOver, setGameOver] = useState(false);
+  const [endingType, setEndingType] = useState('failure');
+  const [analysis, setAnalysis] = useState('');
 
   const handleStart = async () => {
     try {
@@ -30,6 +32,7 @@ export const UIOverlay = () => {
 
   const handleRestart = async () => {
     setGameOver(false);
+    clearQueue();
     try {
       setIsLoading(true);
       await startGame();
@@ -49,10 +52,14 @@ export const UIOverlay = () => {
     for (let i = messageProcessed; i < messageLength; i++) {
       const message = messages[i];
       if (message.type === 'dialog') {
-        speakText(message.text);
+        speakText(message.text, message.npc_id);
       }
       if (message.type === 'game_over') {
+        console.log(message);
+        clearQueue();
         setGameOver(true);
+        setEndingType(message.ending_type || 'failure');
+        setAnalysis(message.analysis || '');
       }
       if (message.type === 'achievement_unlocked') {
         console.log('AchievementUnlocked', message);
@@ -61,7 +68,7 @@ export const UIOverlay = () => {
     }
 
     setMessageProcessed(messageLength);
-  }, [messages, messageProcessed, speakText]);
+  }, [messages, messageProcessed, speakText, clearQueue]);
 
   return (
     <div className='fixed inset-0 p-4 pointer-events-none z-50 flex gap-5'>
@@ -86,7 +93,12 @@ export const UIOverlay = () => {
         )}
       </div>
 
-      <GameOverModal isVisible={gameOver} onRestart={handleRestart} />
+      <GameOverModal
+        isVisible={gameOver}
+        onRestart={handleRestart}
+        endingType={endingType}
+        analysis={analysis}
+      />
     </div>
   );
 };

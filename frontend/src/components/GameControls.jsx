@@ -1,16 +1,34 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { toast } from 'react-toastify';
 import { useTextToSpeechContext } from '../contexts/TextToSpeechContext';
 import { useGameApi } from '../hooks/useGameApi';
 import '../styles/GameControls.css';
 
 export const GameControls = ({ wsConnected, gameStarted, onStart }) => {
   const { startRecording, stopRecording } = useGameApi();
-  const { isSpeechEnabled, toggleSpeech } = useTextToSpeechContext();
+  const {
+    isSpeechEnabled,
+    toggleSpeech,
+    stopAudio,
+    clearQueue,
+    isPlaying,
+    error: audioError,
+  } = useTextToSpeechContext();
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  useEffect(() => {
+    if (audioError) {
+      toast.error('Audio error:', audioError);
+    }
+  }, [audioError]);
+
   const handleStartRecording = async () => {
     try {
+      // Stop all audio before recording starts
+      stopAudio();
+      clearQueue();
+
       setIsLoading(true);
       await startRecording();
       setIsRecording(true);
@@ -31,6 +49,11 @@ export const GameControls = ({ wsConnected, gameStarted, onStart }) => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleStopAllSpeech = () => {
+    stopAudio();
+    clearQueue();
   };
 
   return (
@@ -65,6 +88,15 @@ export const GameControls = ({ wsConnected, gameStarted, onStart }) => {
       >
         {isSpeechEnabled ? 'Disable Speech' : 'Enable Speech'}
       </button>
+
+      {isPlaying && (
+        <button
+          onClick={handleStopAllSpeech}
+          className='game-button stop-button'
+        >
+          Stop Speech
+        </button>
+      )}
     </div>
   );
 };

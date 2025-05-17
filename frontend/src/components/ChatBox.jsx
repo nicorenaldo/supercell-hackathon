@@ -22,9 +22,18 @@ export const ChatBox = ({ messages, isConnected }) => {
           </div>
         );
       case 'game_over':
+        const isSuccess = message.ending_type === 'success';
         return (
-          <div key={index} className='chat-message game-over'>
-            Game Over!
+          <div
+            key={index}
+            className={`chat-message game-over ${
+              isSuccess ? 'success' : 'failure'
+            }`}
+          >
+            <div className='game-over-header'>
+              {isSuccess ? 'Mission Complete!' : 'Game Over!'}
+            </div>
+            <div className='game-over-analysis'>{message.analysis}</div>
           </div>
         );
       case 'achievement':

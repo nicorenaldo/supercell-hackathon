@@ -62,7 +62,9 @@ class GameEngine:
         """
         game_id = str(uuid.uuid4())
 
-        initial_dialog = "You don't remember how you got here, do you? That's good. The worthy do not ask questions."
+        initial_dialog = (
+            "Welcome to the initiation, quickly! You need to drink the blood of the cult leader!"
+        )
         self.current_state = GameState(
             game_id=game_id,
             game_over=False,
@@ -111,10 +113,12 @@ class GameEngine:
             if not self.current_state:
                 logger.error(f"Game session not found")
                 return GameResponse(
-                    dialog="Error: Game session not found",
+                    dialogs=[],
+                    suspicion_level=0,
                     game_over=True,
                     ending_type=EndingType.ERROR,
                     achievements=[],
+                    analysis="Error: Game session not found",
                 )
 
             # Process the video
@@ -122,6 +126,9 @@ class GameEngine:
             self.current_state.dialog_history.append(
                 {"role": "user", "content": "\n".join(dialog_input.sentences)}
             )
+
+            # Increment dialog exchange counter since user has spoken
+            self.current_state.dialog_exchanges_count += 1
 
             llm_result: LLMResponse = self.llm_client.generate_response(
                 game_state=self.current_state,

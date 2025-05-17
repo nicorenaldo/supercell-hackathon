@@ -142,7 +142,7 @@ class LLMClient:
                     }
                 ],
                 function_call={"name": "generate_response"},
-                temperature=0.7,
+                temperature=1,
             )
 
             function_call = response.choices[0].message.function_call
@@ -207,30 +207,36 @@ You are an AI controlling a *cult ritual* scenario in a game. The player is an *
 ACT 1: ARRIVAL (1-2 exchanges)
 
 Player awakens during a cult ritual
-Reveal setting is serious and ceremonial
-Test player's composure immediately
-Key reveal: This is a dangerous cult situation
+Force player to drink the blood soup of the cult leader
 
 ACT 2: DISCOVERY (1-2 exchanges)
 
-Drop clear hints about an impending sacrifice
+Drop clear hints about an impending sacrifice of your friends
 NPCs whisper crucial information if suspicion is low
-Key reveal: Someone will be sacrificed (possibly the player)
 
 ACT 3: CLIMAX (1-2 exchanges)
 
 Final test of player's loyalty
-Player must decide to sabotage ritual or comply
-Clear opportunity for player to take action
-End with success/failure based on choices and suspicion level
+Success: The ritual is sabotaged and the sacrifice is saved
+Fail: The ritual is successful and the sacrifice is killed OR suspicion is too high
+End when either success or failure is achieved.
+
+You must track the current act based on the dialog_exchanges_count:
+- Act 1: exchanges 0-2 
+- Act 2: exchanges 3-4
+- Act 3: exchanges 5+
+
+Progress the story appropriately for each act. Don't rush through acts but don't drag them out unnecessarily either.
+
 
 Suspicion System
 
 Scale: 0-10 (starts at 5)
-Appropriate emotions (serious, solemn, calm): -1 suspicion
+Appropriate emotions (serious, solemn, calm, appreciative): -1 suspicion
 Inappropriate emotions (fear, laughter, confusion): +2 suspicion
 If suspicion reaches 10: Game ends in failure
 If suspicion drops below 3: NPCs reveal more information
+If user has inappropriate emotions, NPC must interogate why user are acting weird
 
 Player Objectives
 
@@ -241,11 +247,12 @@ Success condition: Sabotage the ritual OR escape without detection
 
 NPC Dialog Guidelines
 
-Use archaic, ceremonial language
-Keep exchanges brief but intense
-Provide clear decision points in Act 3
+Use a 21th century english language, easy to understand B2 level
+Keep exchanges brief
+Provide clear decision with threat in Act 3
 Drop unmistakable hints in Act 2
-Only one NPC should speak at a time.
+During ending (where game is over, success or failure is achieved), analysis should be provided of the summary of the game.
+Change the NPC who do the talking, more variety.
 
 ---
 
@@ -286,7 +293,8 @@ Only give achievements when the player does something noteworthy.
     "id": "npc_unique_id",
     "description": "Vivid physical description",
     "role": "npc_role"
-  }
+  },
+  "analysis": "string"
 }
 """
 
@@ -297,12 +305,14 @@ Only give achievements when the player does something noteworthy.
     ) -> Dict[str, Any]:
         """Build the context object for the LLM API call"""
 
+        trimmed_dialog_history = game_state.dialog_history[-10:]
         context = {
             "current_state": {
                 "suspicion_level": game_state.suspicion_level,
-                "dialog_history": game_state.dialog_history,
+                "dialog_history": trimmed_dialog_history,
                 "achievements": game_state.achievement_names,
                 "npcs": [npc.model_dump() for npc in game_state.npcs],
+                "dialog_exchanges_count": game_state.dialog_exchanges_count,
             },
             "user_input": dialog_input.to_dict(),
         }

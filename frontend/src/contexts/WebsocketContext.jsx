@@ -39,7 +39,14 @@ export const WebsocketProvider = ({ children }) => {
           },
         ]);
       } else if (data.game_over) {
-        setMessages((prev) => [...prev, { type: 'game_over' }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            type: 'game_over',
+            ending_type: data.ending_type,
+            analysis: data.analysis,
+          },
+        ]);
       } else if (data.achievement_unlocked) {
         setMessages((prev) => [
           ...prev,
