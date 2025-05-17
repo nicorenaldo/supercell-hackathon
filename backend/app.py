@@ -7,11 +7,10 @@ from dotenv import load_dotenv
 import logging
 
 from models import GameResponse, GameStage
-from speech2text.speech2text import Speech2Text
 from engine import GameEngine
 from llm_integration.llm_client import LLMClient
 from recording_manager.manager import RecordingManager, RecordingResult, RecordingStatus
-from emotion_detector.detector import EmotionDetector
+from video_processor import VideoProcessor
 
 load_dotenv()
 
@@ -24,10 +23,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-speech2text = Speech2Text()
-emotion_detector = EmotionDetector()
+video_processor = VideoProcessor()
 llm_client = LLMClient(api_key=os.getenv("OPENAI_API_KEY"))
-game_engine = GameEngine(llm_client, emotion_detector, speech2text)
+game_engine = GameEngine(llm_client, video_processor)
 recording_manager = RecordingManager()
 
 websocket_connection: Optional[WebSocket] = None
@@ -44,11 +42,12 @@ async def root():
 @app.post("/start-game")
 async def start_game():
     """Initialize a new game session"""
-    game_id = game_engine.create_new_game()
+    game_id, initial_dialog = game_engine.create_new_game()
     if websocket_connection:
         # Send dialog to start the convo
         await websocket_connection.send_text(f"new_game:{game_id}")
-    return {"game_id": game_id}
+        await websocket_connection.send_json({"monolog": initial_dialog})
+    return {"game_id": game_id, "initial_dialog": initial_dialog}
 
 
 @app.post("/recording/start")
@@ -88,23 +87,21 @@ async def process_recording(recording_result: RecordingResult):
         if game_response.game_over:
             await websocket_connection.send_json(
                 {
-                    "game_over": game_response.game_over,
+                    "game_over": True,
                 }
             )
         if game_response.achievements:
             await websocket_connection.send_json(
                 {
-                    "achievements": game_response.achievements,
+                    "achievement_unlocked": [
+                        ach.model_dump() for ach in game_response.achievements
+                    ],
                 }
             )
-        if game_response.next_scene:
+        if game_response.next_stage:
             await websocket_connection.send_json(
                 {
-                    "next_scene": (
-                        game_response.next_scene.value
-                        if isinstance(game_response.next_scene, GameStage)
-                        else game_response.next_scene
-                    ),
+                    "next_stage": game_response.next_stage.value,
                 }
             )
 

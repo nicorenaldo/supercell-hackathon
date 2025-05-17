@@ -31,7 +31,6 @@ This project is a browser-based interactive game powered by emotional input from
 ### 2. Backend (Python)
 
 - **Camera Module:** Captures webcam image using OpenCV
-- **Audio Module:** Records short audio clips (PyAudio or equivalent)
 - **Emotion Detection:**
   - Uses pretrained CNN or FER+ to classify facial emotions
   - (Optional) Audio emotion detection based on tone/pitch
@@ -51,19 +50,5 @@ This project is a browser-based interactive game powered by emotional input from
 3. Emotion model classifies image
 4. Audio is analyzed for mood/sentiment
 5. Game engine updates state and sends next dialog to frontend
-
----
-
-## 🧰 Tech Stack
-
-| Component      | Technology                     |
-| -------------- | ------------------------------ |
-| Frontend       | Three.js, WebSocket/REST       |
-| Backend API    | FastAPI or Flask               |
-| Webcam Capture | OpenCV                         |
-| Audio Capture  | PyAudio                        |
-| Emotion Model  | FER+, AffectNet, or simple CNN |
-| Game Logic     | Python FSM or custom rules     |
-| Dev Tools      | Cursor IDE, GitHub             |
 
 ---

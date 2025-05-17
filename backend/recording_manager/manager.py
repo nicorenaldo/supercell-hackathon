@@ -1,4 +1,3 @@
-import time
 import uuid
 import logging
 from typing import Dict, Any, Optional
@@ -15,7 +14,7 @@ class RecordingResult(BaseModel):
     """Model for recording results"""
 
     recording_id: str
-    video_file: Optional[str] = None
+    file_path: Optional[str] = None
 
 
 class RecordingStatus(BaseModel):
@@ -77,7 +76,7 @@ class RecordingManager:
 
         result = RecordingResult(
             recording_id=recording_id,
-            video_file=video_result.get("filename"),
+            file_path=video_result.get("filename"),
         )
 
         return result
