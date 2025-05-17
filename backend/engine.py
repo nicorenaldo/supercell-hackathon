@@ -9,7 +9,6 @@ from models import (
     Achievement,
     EndingType,
     GameResponse,
-    GameStage,
     GameState,
     LLMResponse,
 )
@@ -59,29 +58,41 @@ class GameEngine:
 
         Returns:
             game_id: Unique identifier for the new game session
+            initial_dialog: Initial dialog for the new game session
         """
         game_id = str(uuid.uuid4())
 
-        initial_dialog = "Welcome to the cult, who is your name young padawan."
+        initial_dialog = "You don't remember how you got here, do you? That's good. The worthy do not ask questions."
         self.current_state = GameState(
             game_id=game_id,
             game_over=False,
             achievements=[],
             dialog_history=[
-                {"role": "npc_cult_leader", "content": initial_dialog},
+                {"role": "npc_ritual_voice", "content": initial_dialog},
             ],
             npcs=[
                 NPC(
                     id="npc_cult_leader",
-                    description="The cult leader, a tall figure with a hooded cloak. They are wearing a mask of a demonic face.",
+                    description="Disembodied voice leading the initiation. Deep, slow, commanding.",
+                    role="Tutorial narrator / cult leader",
                 ),
                 NPC(
-                    id="npc_cult_member",
-                    description="A cult member, a short figure with a hooded cloak. They are wearing a mask of a demonic face.",
+                    id="npc_sara",
+                    description="A quiet, hooded woman who watches you closely. Seems to judge silently.",
+                    role="Suspicion mechanic trigger",
+                ),
+                NPC(
+                    id="npc_elen",
+                    description="Nervous new recruit, friendly and unsure.",
+                    role="Emotion/ally interaction",
+                ),
+                NPC(
+                    id="npc_alex",
+                    description="Masked, silent enforcer who blocks exits and watches movements.",
+                    role="Adds tension, responds to suspicion",
                 ),
             ],
             suspicion_level=5,
-            stage=GameStage.INTRODUCTION,
         )
         logger.info(f"Created new game session: {game_id}")
         return game_id, initial_dialog
@@ -118,16 +129,23 @@ class GameEngine:
             )
 
             # Update game state with LLM response
-            self.current_state.stage = llm_result.stage
             self.current_state.suspicion_level = llm_result.suspicion_level
             self.current_state.game_over = llm_result.is_game_over
-            self.current_state.dialog_history.append(
-                {
-                    "role": "system",
-                    "content": llm_result.dialog,
-                    "npc_id": llm_result.npc_id,
-                }
-            )
+            for dialog in llm_result.dialogs:
+                self.current_state.dialog_history.append(
+                    {
+                        "role": "system",
+                        "content": dialog.dialog,
+                        "npc_id": dialog.npc_id,
+                    }
+                )
+
+            # Add new NPC if provided by LLM
+            if llm_result.new_npc:
+                existing_npc_ids = [npc.id for npc in self.current_state.npcs]
+                if llm_result.new_npc.id not in existing_npc_ids:
+                    self.current_state.npcs.append(llm_result.new_npc)
+                    logger.info(f"Added new NPC: {llm_result.new_npc.id}")
 
             # Process dynamic achievements from LLM response
             new_achievements = []
@@ -141,8 +159,7 @@ class GameEngine:
                     new_achievements.append(new_ach)
 
             response = GameResponse(
-                dialog=llm_result.dialog,
-                npc_id=llm_result.npc_id,
+                dialogs=llm_result.dialogs,
                 suspicion_level=llm_result.suspicion_level,
                 game_over=llm_result.is_game_over,
                 ending_type=llm_result.ending_type,
@@ -154,8 +171,7 @@ class GameEngine:
         except Exception as e:
             logger.error(f"Error processing recording: {e}")
             return GameResponse(
-                dialog="Error: Failed to process recording",
-                npc_id="error",
+                dialogs=[],
                 suspicion_level=0,
                 game_over=True,
                 ending_type=EndingType.ERROR,

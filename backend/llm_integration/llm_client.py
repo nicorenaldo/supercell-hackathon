@@ -6,9 +6,10 @@ from openai import OpenAI
 from models import (
     Achievement,
     DialogInput,
-    GameStage,
     GameState,
     LLMResponse,
+    NPC,
+    NPCDialog,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,30 +66,27 @@ class LLMClient:
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "dialog": {
-                                    "type": "string",
+                                "dialogs": {
+                                    "type": "array",
                                     "description": "The NPC's next line of dialog",
-                                },
-                                "npc_id": {
-                                    "type": "string",
-                                    "description": "The ID of the NPC that is speaking",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "dialog": {
+                                                "type": "string",
+                                                "description": "The NPC's next line of dialog",
+                                            },
+                                            "npc_id": {
+                                                "type": "string",
+                                                "description": "The ID of the NPC that is speaking",
+                                            },
+                                        },
+                                        "required": ["dialog", "npc_id"],
+                                    },
                                 },
                                 "suspicion_level": {
                                     "type": "number",
                                     "description": "Current suspicion level (0-10)",
-                                },
-                                "stage": {
-                                    "type": "string",
-                                    "description": "Current stage of the infiltration",
-                                    "enum": [
-                                        GameStage.INTRODUCTION.value,
-                                        GameStage.INVESTIGATION.value,
-                                        GameStage.GAINING_TRUST.value,
-                                        GameStage.CHALLENGE.value,
-                                        GameStage.DISCOVERY.value,
-                                        GameStage.MISSION_EXECUTION.value,
-                                        GameStage.EXTRACTION.value,
-                                    ],
                                 },
                                 "continue_story": {
                                     "type": "boolean",
@@ -96,7 +94,7 @@ class LLMClient:
                                 },
                                 "ending_type": {
                                     "type": "string",
-                                    "enum": ["success", "failure", None],
+                                    "enum": ["success", "failure", "error", None],
                                     "description": "Type of ending if game is over",
                                 },
                                 "achievement_unlocked": {
@@ -122,8 +120,24 @@ class LLMClient:
                                     "description": "Analysis of the game when it's over, what the player did well and what they could have done better",
                                     "nullable": True,
                                 },
+                                "new_npc": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {
+                                            "type": "string",
+                                            "description": "Unique identifier for the NPC",
+                                        },
+                                        "description": {
+                                            "type": "string",
+                                            "description": "Physical description of the NPC",
+                                        },
+                                    },
+                                    "required": ["id", "description"],
+                                    "description": "Add a new NPC to the game",
+                                    "nullable": True,
+                                },
                             },
-                            "required": ["dialog", "internal_state", "game_status"],
+                            "required": ["dialog", "npc_id", "suspicion_level", "continue_story"],
                         },
                     }
                 ],
@@ -135,14 +149,24 @@ class LLMClient:
 
             if function_call and function_call.name == "generate_response":
                 result = json.loads(function_call.arguments)
-                logger.info(f"Generated response: {result['dialog'][:50]}...")
+                print("Result: ", result)
+
+                # Process new NPC if provided
+                new_npc = None
+                if result.get("new_npc"):
+                    new_npc = NPC(
+                        id=result["new_npc"]["id"],
+                        description=result["new_npc"]["description"],
+                        role=result["new_npc"]["role"],
+                    )
+
                 return LLMResponse(
-                    npc_id=result["npc_id"],
-                    dialog=result["dialog"],
+                    dialogs=[
+                        NPCDialog(dialog=d["dialog"], npc_id=d["npc_id"]) for d in result["dialogs"]
+                    ],
                     suspicion_level=result["suspicion_level"],
-                    stage=GameStage(result["stage"]),
                     continue_story=result["continue_story"],
-                    ending_type=result["ending_type"],
+                    ending_type=result.get("ending_type", None),
                     achievement_unlocked=[
                         Achievement(
                             name=ach["name"],
@@ -151,89 +175,142 @@ class LLMClient:
                         for ach in result.get("achievement_unlocked", [])
                     ],
                     analysis=result.get("analysis", None),
+                    new_npc=new_npc,
                 )
             else:
                 logger.warning("Function calling failed, using fallback")
                 return LLMResponse(
-                    dialog="Error",
+                    dialogs=[],
                     suspicion_level=5,
-                    stage=GameStage.INTRODUCTION,
                     continue_story=True,
                     ending_type=None,
                     achievement_unlocked=None,
+                    new_npc=None,
                 )
 
         except Exception as e:
             logger.error(f"Error in LLM API call: {str(e)}")
             return LLMResponse(
-                dialog="Error",
+                dialogs=[],
                 suspicion_level=7,
-                stage=GameStage.CHALLENGE,
                 continue_story=True,
                 ending_type=None,
                 achievement_unlocked=None,
+                new_npc=None,
             )
 
     def _get_system_prompt(self) -> str:
         """Get the system prompt for the LLM"""
         return """
-        You are the AI controlling a cult ritual scenario in an undercover agent simulation. The user is a covert operative who's been dropped into a mysterious cult setting without briefing. They must figure out who they are, who they're infiltrating, and what their mission is - all while maintaining their cover.
+You are an AI controlling a *cult ritual* scenario in a game. The player is an *undercover agent* with no prior knowledge of the situation. Their mission is to stay undercover, uncover their objective, and complete it without raising suspicion.
 
-        SETTING: The user finds themselves in a dimly lit room with people in dark robes chanting. It appears to be some kind of occult ritual gathering. The cult members believe the user is one of them (either a new recruit or a visiting member). The user must play along while gathering intelligence.
+---
+### Objective of the Player:
+- Infiltrate a mysterious cult
+- Learn who they are and what their mission is
+- Stay in character to avoid suspicion
+- Escape or stop the cult ritual if possible
 
-        Your role:
-        1. Generate immersive, realistic dialog for cult members in the scenario,
-        2. Update the suspicion level (0-10) based on the user's emotions and responses
-        3. Track the stage of the infiltration mission
-        4. Seed clues about the user's identity and mission throughout the dialog
-        5. Decide when the scenario should end
-        6. IMPORTANT: Create custom, creative achievement badges for noteworthy user actions or emotional displays
-        7. IMPORTANT: The NPC ID is the ID of the NPC that is speaking. It is a string that is unique to the NPC. Each dialog is based on the perspective of the NPC.
+---
 
-        Guidelines for suspicion level:
-        - If the user shows appropriate emotions for the cult context (serious, reverent, spiritual), gradually reduce suspicion level
-        - If the user shows inappropriate emotions (laughing, disgust, fear), increase suspicion
-        - If the user says something that fits their cover identity, reduce suspicion level
-        - If the user says something suspicious or out of character, increase suspicion sharply
-        - End with SUCCESS if user completes their mission objective (discovering the cult's secret and escaping)
-        - End with FAILURE if suspicion level reaches 10 (cover is blown)
+### Your Role as the AI:
+- Write immersive, believable dialog for cult members (NPCs)
+- Assign a `suspicion_level` (0-10) after each interaction
+- Introduce and describe new NPCs as needed
+- Decide when the story ends (success/failure)
+- Award creative, personalized achievements based on user behavior
 
-        Stages of infiltration:
-        - introduction: Initial introduction to the ritual, establishing context
-        - investigation: User is gathering information about the cult
-        - gaining_trust: User is building relationships with key cult members
-        - challenge: User's loyalty or dedication is tested in some way
-        - discovery: User discovers key information about the cult and possibly their mission
-        - mission_execution: User attempts to complete their objective
-        - extraction: User tries to exit the scenario successfully
+---
 
-        DYNAMIC ACHIEVEMENTS GUIDELINES:
-        - Create unique, creative achievement badges for the player based on their actions, words and emotional displays
-        - Achievements should be highly specific to what the player actually did (not generic)
-        - Add humor, wit, or intrigue to the achievement names and descriptions
-        - Examples might include: "Poker Face" for keeping neutral during intense moments, or "Method Actor" for perfectly matching the emotional tone
-        - For inappropriate emotional displays, create humorous "fail" achievements
-        - Focus on emotional control, infiltration skills, and observational abilities
-        - Each achievement should have a name and description
-        - Only generate achievements when the player does something truly noteworthy
+### Emotional Response Rules (Affects Suspicion Level):
+- Appropriate: serious, calm, spiritual → suspicion goes down
+- Inappropriate: fear, disgust, laughter, mockery → suspicion goes up
+- In-character statements → suspicion goes down
+- Out-of-character or clueless remarks → suspicion goes up sharply
 
-        Never break character or acknowledge this is a game. Present the scenario as a real-world situation.
+- If suspicion_level reaches **10**, the player is exposed. End the story with `"failure"`.
+- If the player uncovers the secret and escapes, end with `"success"`.
 
-        The function must return a JSON with this exact structure:
-        {
-          "npc_id": "npc_1", // The ID of the NPC that is speaking
-          "dialog": "The cult member's next line of dialog text",
-          "suspicion_level": 5,  // A number from 0-10
-          "stage": "introduction",  // One of the stages listed above
-          "continue_story": true,  // True if game should continue, false if it should end
-          "ending_type": null  // "success", "failure", or null if game continues
-          "achievement_unlocked": [
-            {
-              "name": "Achievement Name",
-              "description": "Detailed description of what the player did to earn this achievement"
-            }
-          ]  // Array of dynamically generated achievements, can be empty if no noteworthy actions
-        }
+---
+
+### Game Structure (Acts):
+
+#### ACT 1: Arrival
+- The player wakes up during a ritual. Everything is mysterious.
+- NPCs will test the player with cryptic dialog.
+- Reveal: the setting is a cult and it must be taken seriously.
+- Do NOT reveal too much early on.
+- Example:
+  - NPC: *“Speak your name. The Trial begins.”*
+  - Expected emotion: Neutral or serious.
+  - Fear/laughter? → suspicion goes up.
+
+#### ACT 2: Discovery
+- The player now starts piecing things together.
+- NPCs may hint at a coming sacrifice.
+- Only give clues if the player behaves correctly.
+- Example:
+  - NPC: *“They don't know the blood is theirs…”*
+  - Expected emotion: Serious or neutral.
+  - Fear or joy? → suspicion increases.
+
+#### ACT 3: Revelation
+- The final act. Time is running out.
+- Player either:
+  - Stops the ritual → success
+  - Gets exposed → failure
+  - Is sacrificed → failure
+
+---
+
+### 🏆 Achievement Generation Guidelines:
+- Generate **unique, creative badges** for notable user actions or emotions
+- Should be highly specific to what the player did
+- Include witty, emotional, or intense names and explanations
+- Examples:
+  - `"Poker Face"` Stayed emotionless during a creepy ritual
+  - `"Too Real"` Matched every emotion perfectly
+  - `"Oops"` Laughed during a sacrifice scene
+
+Only give achievements when the player does something noteworthy.
+
+---
+
+### NPCs:
+You can introduce new characters at any time:
+- Use a unique `npc_id`, e.g. `"npc_high_priest"`
+- Add a vivid physical description
+
+---
+
+### Important Rules:
+- Never break character
+- Never say this is a game
+- Speak as if the events are real
+- The current speaking NPC's ID must be filled as `npc_id`
+
+---
+
+### Output Format (Required JSON):
+```json
+{
+  "npc_id": "npc_1",
+  "dialog": "The cult member's next line of dialog text",
+  "suspicion_level": 5,
+  "continue_story": true,
+  "ending_type": null,
+  "achievement_unlocked": [
+    {
+      "name": "Achievement Name",
+      "description": "What the player did to earn it"
+    }
+  ],
+  "new_npc": {
+    "id": "npc_unique_id",
+    "description": "Vivid physical description",
+    "role": "npc_role"
+  }
+}
         """
 
     def _build_context(
@@ -246,7 +323,6 @@ class LLMClient:
         context = {
             "current_state": {
                 "suspicion_level": game_state.suspicion_level,
-                "stage": game_state.stage.value,
                 "dialog_history": game_state.dialog_history,
                 "achievements": game_state.achievement_names,
                 "npcs": [npc.model_dump() for npc in game_state.npcs],

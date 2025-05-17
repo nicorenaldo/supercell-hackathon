@@ -9,7 +9,7 @@ import logging
 from models import GameResponse
 from engine import GameEngine
 from llm_integration.llm_client import LLMClient
-from recording_manager.manager import RecordingManager, RecordingResult, RecordingStatus
+from recording_manager.manager import RecordingManager, RecordingResult
 from video_processor import VideoProcessor
 
 load_dotenv()
@@ -97,14 +97,15 @@ async def process_recording(recording_result: RecordingResult):
                     ],
                 }
             )
-        if game_response.dialog:
-            await websocket_connection.send_json(
-                {
-                    "dialog": game_response.dialog,
-                    "npc_id": game_response.npc_id,
-                    "suspicion_level": game_response.suspicion_level,
-                }
-            )
+        if game_response.dialogs:
+            for dialog in game_response.dialogs:
+                await websocket_connection.send_json(
+                    {
+                        "dialog": dialog.dialog,
+                        "npc_id": dialog.npc_id,
+                        "suspicion_level": game_response.suspicion_level,
+                    }
+                )
 
 
 @app.websocket("/ws")

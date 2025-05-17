@@ -8,16 +8,6 @@ class Achievement(BaseModel):
     description: str
 
 
-class GameStage(Enum):
-    INTRODUCTION = "introduction"
-    INVESTIGATION = "investigation"
-    GAINING_TRUST = "gaining_trust"
-    CHALLENGE = "challenge"
-    DISCOVERY = "discovery"
-    MISSION_EXECUTION = "mission_execution"
-    EXTRACTION = "extraction"
-
-
 class EndingType(Enum):
     SUCCESS = "success"
     FAILURE = "failure"
@@ -27,6 +17,7 @@ class EndingType(Enum):
 class NPC(BaseModel):
     id: str
     description: str
+    role: str
 
 
 class GameState(BaseModel):
@@ -37,7 +28,6 @@ class GameState(BaseModel):
     achievements: List[Achievement] = Field(default_factory=list)
     dialog_history: List[Dict[str, str]] = Field(default_factory=list)
     suspicion_level: int = 5  # 0 to 10
-    stage: GameStage = GameStage.INTRODUCTION
     npcs: List[NPC] = Field(default_factory=list)
 
     @property
@@ -45,17 +35,21 @@ class GameState(BaseModel):
         return [ach.name for ach in self.achievements]
 
 
+class NPCDialog(BaseModel):
+    dialog: str
+    npc_id: str
+
+
 class LLMResponse(BaseModel):
     """Model for the structured response from the LLM"""
 
-    dialog: str
-    npc_id: str
+    dialogs: List[NPCDialog]
     suspicion_level: int
-    stage: GameStage
     continue_story: bool
     ending_type: Optional[EndingType] = None
     achievement_unlocked: Optional[List[Achievement]] = None
     analysis: Optional[str] = None
+    new_npc: Optional[NPC] = None
 
     @property
     def is_game_over(self) -> bool:
@@ -65,8 +59,7 @@ class LLMResponse(BaseModel):
 class GameResponse(BaseModel):
     """Response sent back to the frontend"""
 
-    dialog: str  # Dialog to read for the NPC
-    npc_id: str  # ID of the NPC that is speaking
+    dialogs: List[NPCDialog]  # Dialogs to read for the NPCs
     suspicion_level: int  # Suspicion level of the NPC
     game_over: bool = False  # Whether the game is over
     ending_type: Optional[EndingType] = None  # Type of ending if game is over
@@ -76,8 +69,7 @@ class GameResponse(BaseModel):
     @model_serializer
     def serialize_model(self) -> Dict[str, Any]:
         return {
-            "dialog": self.dialog,
-            "npc_id": self.npc_id,
+            "dialogs": [dialog.model_dump() for dialog in self.dialogs],
             "suspicion_level": self.suspicion_level,
             "game_over": self.game_over,
             "ending_type": self.ending_type.value if self.ending_type else None,
@@ -109,7 +101,7 @@ class Emotions:
 
         # Normalize to percentages
         for k, v in emotion_values.items():
-            setattr(self, k, (v / total))
+            setattr(self, k, round((v / total), 2))
 
     def to_dict(self) -> Dict[str, float]:
         """Convert emotions to dictionary format"""
