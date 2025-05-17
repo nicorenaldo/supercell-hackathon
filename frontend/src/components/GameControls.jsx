@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useGameApi } from '../hooks/useGameApi';
+import '../styles/GameControls.css'; 
 
 export const GameControls = () => {
   const { startGame, startRecording, stopRecording } = useGameApi();
@@ -45,29 +46,20 @@ export const GameControls = () => {
     }
   };
 
-  const startButtonClasses =
-    isRecording || isLoading
-      ? 'bg-gray-400 text-gray-600 cursor-not-allowed shadow-none'
-      : 'bg-green-500 text-white hover:bg-green-600 hover:-translate-y-0.5 transition-transform';
-
-  const stopButtonClasses =
-    !isRecording || isLoading
-      ? 'bg-gray-400 text-gray-600 cursor-not-allowed shadow-none'
-      : 'bg-red-500 text-white hover:bg-red-600 hover:-translate-y-0.5 transition-transform';
-
   return (
-    <div className='flex gap-4 p-4 bg-black/60 rounded-lg z-10'>
+    <div className="game-controls">
       <button
         onClick={handleStartRecording}
         disabled={isRecording || isLoading}
-        className={`py-2.5 px-5 border-none rounded font-bold text-sm min-w-[140px] shadow-md ${startButtonClasses}`}
+        className="game-button start-button"
       >
         {isLoading && !isRecording ? 'Starting...' : 'Start Recording'}
       </button>
+
       <button
         onClick={handleStopRecording}
         disabled={!isRecording || isLoading}
-        className={`py-2.5 px-5 border-none rounded font-bold text-sm min-w-[140px] shadow-md ${stopButtonClasses}`}
+        className="game-button stop-button"
       >
         {isLoading && isRecording ? 'Stopping...' : 'Stop Recording'}
       </button>
