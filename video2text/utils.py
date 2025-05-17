@@ -4,6 +4,8 @@ import os
 from moviepy import VideoFileClip
 from deepface import DeepFace
 from time import sleep, time
+from fer import FER
+import numpy as np
 
 def validate_video(video_path):
     cap = cv2.VideoCapture(video_path)
@@ -23,44 +25,125 @@ def transcribe_audio(video_path):
     result = model.transcribe(audio_path, word_timestamps=True)
     return result['segments']
 
-# Step 2: Extract frame at midpoint of each transcript segment
-def extract_frames(video_path, segments, output_folder='frames'):
+# Step 2: Extract multiple frames per sentence
+def extract_frames(video_path, segments, n=3, output_folder='frames'):
+    """Extract n frames from each segment with uniform distribution.
+    Args:
+        video_path: Path to video file
+        segments: List of segments with start and end times
+        n: Number of frames to extract per segment (minimum 1)
+        output_folder: Where to save extracted frames
+    """
     os.makedirs(output_folder, exist_ok=True)
     video = cv2.VideoCapture(video_path)
     fps = video.get(cv2.CAP_PROP_FPS)
     
     frame_data = []
-    
     for i, seg in enumerate(segments):
-        timestamp = (seg['start'] + seg['end']) / 2
-        frame_num = int(timestamp * fps)
-        video.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-        ret, frame = video.read()
-        if ret:
-            path = f"{output_folder}/frame_{i}.jpg"
-            cv2.imwrite(path, frame)
-            frame_data.append((path, seg['start'], seg['end'], seg['text']))
+        segment_frames = []
+        start_time = seg['start']
+        end_time = seg['end']
+        duration = end_time - start_time
+        
+        # Handle different numbers of frames
+        if n <= 0:
+            n = 1  # Ensure at least one frame
+        
+        if n == 1:
+            # For single frame, take the middle
+            timestamps = [start_time + duration/2]
+        else:
+            # For multiple frames, include start and end, and distribute the rest evenly
+            timestamps = [
+                start_time + (duration * j / (n - 1))
+                for j in range(n)
+            ]
+        
+        # Extract frames at calculated timestamps
+        for j, timestamp in enumerate(timestamps):
+            frame_num = int(timestamp * fps)
+            video.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+            ret, frame = video.read()
+            if ret:
+                path = f"{output_folder}/frame_{i}_{j}.jpg"
+                cv2.imwrite(path, frame)
+                segment_frames.append(path)
+        
+        if segment_frames:
+            frame_data.append((segment_frames, seg['start'], seg['end'], seg['text']))
     
     video.release()
     return frame_data
 
-# Step 3: Analyze emotion
+def preprocess_image(img):
+    # Resize to a reasonable size while maintaining aspect ratio
+    height, width = img.shape[:2]
+    max_dim = 640
+    if height > max_dim or width > max_dim:
+        scale = max_dim / max(height, width)
+        new_width = int(width * scale)
+        new_height = int(height * scale)
+        img = cv2.resize(img, (new_width, new_height))
+    return img
+
+# Step 3: Emotion analysis with probability output
 def detect_emotions(frames):
     results = []
-    for frame_path, start, end, text in frames:
-        try:
-            analysis = DeepFace.analyze(img_path=frame_path, actions=['emotion'], enforce_detection=False)
-            emotion = analysis[0]['dominant_emotion']
-        except Exception as e:
-            emotion = "error"
-        results.append({'time': (start, end), 'text': text, 'emotion': emotion})
+    for frame_paths, start, end, text in frames:
+        emotion_probs_all = []
+        
+        for path in frame_paths:
+            try:
+                # Use DeepFace to analyze emotions
+                analysis = DeepFace.analyze(
+                    img_path=path,
+                    actions=['emotion'],
+                    enforce_detection=False,
+                    silent=True
+                )
+                
+                if analysis:
+                    # DeepFace returns emotion probabilities as percentages
+                    emotion_probs = analysis[0]['emotion']
+                    # Convert percentage strings to float values
+                    emotion_probs = {k: float(v) for k, v in emotion_probs.items()}
+                    emotion_probs_all.append(emotion_probs)
+            except Exception as e:
+                continue
+        
+        # Average emotion probabilities across all frames
+        if emotion_probs_all:
+            # Get all unique emotion keys
+            all_emotions = set().union(*[d.keys() for d in emotion_probs_all])
+            # Average each emotion's probability
+            averaged = {
+                emotion: sum(d.get(emotion, 0) for d in emotion_probs_all) / len(emotion_probs_all)
+                for emotion in all_emotions
+            }
+            # Normalize probabilities to ensure they sum to 100
+            total = sum(averaged.values())
+            if total > 0:
+                averaged = {k: (v/total) * 100 for k, v in averaged.items()}
+        else:
+            averaged = {
+                'angry': 0, 'disgust': 0, 'fear': 0, 
+                'happy': 0, 'sad': 0, 'surprise': 0, 'neutral': 0
+            }
+        
+        results.append({
+            'time': (start, end),
+            'text': text,
+            'emotions': averaged
+        })
     return results
-
 
 def extract_audio_from_video(video_path, output_audio="temp.wav"):
     clip = VideoFileClip(video_path)
     clip.audio.write_audiofile(output_audio)
     return output_audio
+
+
+
 
 if __name__=="__main__":
     # Main execution
@@ -73,4 +156,4 @@ if __name__=="__main__":
     print(f"Total execution time: {end_time - start_time:.2f} seconds")
     # Output results
     for entry in emotions:
-        print(f"[{entry['time'][0]:.2f}s - {entry['time'][1]:.2f}s] {entry['text']} --> Emotion: {entry['emotion']}")
+        print(f"[{entry['time'][0]:.2f}s - {entry['time'][1]:.2f}s] {entry['text']} --> Emotions: {entry['emotions']}")
