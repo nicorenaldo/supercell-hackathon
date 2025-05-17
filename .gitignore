@@ -8,4 +8,5 @@ __pycache__/
 recordings/
 .DS_Store
 .env*
+env
 frames/
