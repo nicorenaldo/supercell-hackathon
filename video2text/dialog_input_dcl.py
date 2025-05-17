@@ -10,6 +10,20 @@ class Emotions:
         self.sad: float = emotion_probs['sad']
         self.surprise: float = emotion_probs['surprise']
         self.neutral: float = emotion_probs['neutral']
+        self.normalize()
+
+    def normalize(self):
+        # Get all attributes that don't start with __
+        emotion_values = {k: v for k, v in self.__dict__.items() 
+                         if not k.startswith('__')}
+        total = sum(emotion_values.values())
+        
+        if total == 0:
+            raise ValueError("Total sum of emotions is 0")
+            
+        # Normalize to percentages
+        for k, v in emotion_values.items():
+            setattr(self, k, (v/total))
 
 class DialogInputDCL:
     def __init__(self,
