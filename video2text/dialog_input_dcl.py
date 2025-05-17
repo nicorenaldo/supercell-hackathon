@@ -1,4 +1,4 @@
-from prelimm import transcribe_audio, extract_frames, detect_emotions
+from utils import transcribe_audio, extract_frames, detect_emotions
 import os
 
 class DialogInputDCL:
