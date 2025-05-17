@@ -1,26 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useTextToSpeechContext } from '../contexts/TextToSpeechContext';
 import { useGameApi } from '../hooks/useGameApi';
-import '../styles/GameControls.css'; 
+import '../styles/GameControls.css';
 
-export const GameControls = () => {
-  const { startGame, startRecording, stopRecording } = useGameApi();
+export const GameControls = ({ wsConnected, gameStarted, onStart }) => {
+  const { startRecording, stopRecording } = useGameApi();
+  const { isSpeechEnabled, toggleSpeech } = useTextToSpeechContext();
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-
-  useEffect(() => {
-    const initGame = async () => {
-      try {
-        setIsLoading(true);
-        await startGame();
-      } catch (error) {
-        console.error('Error initializing game:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    initGame();
-  }, [startGame]);
 
   const handleStartRecording = async () => {
     try {
@@ -47,11 +34,17 @@ export const GameControls = () => {
   };
 
   return (
-    <div className="game-controls">
+    <div className='game-controls'>
+      {!gameStarted && (
+        <button onClick={onStart} className='game-button start-button'>
+          {isLoading ? 'Starting...' : 'Start Game'}
+        </button>
+      )}
+
       <button
         onClick={handleStartRecording}
         disabled={isRecording || isLoading}
-        className="game-button start-button"
+        className='game-button start-button'
       >
         {isLoading && !isRecording ? 'Starting...' : 'Start Recording'}
       </button>
@@ -59,9 +52,18 @@ export const GameControls = () => {
       <button
         onClick={handleStopRecording}
         disabled={!isRecording || isLoading}
-        className="game-button stop-button"
+        className='game-button stop-button'
       >
         {isLoading && isRecording ? 'Stopping...' : 'Stop Recording'}
+      </button>
+
+      <button
+        onClick={toggleSpeech}
+        className={`game-button ${
+          isSpeechEnabled ? 'stop-button' : 'start-button'
+        }`}
+      >
+        {isSpeechEnabled ? 'Disable Speech' : 'Enable Speech'}
       </button>
     </div>
   );

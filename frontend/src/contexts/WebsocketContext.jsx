@@ -1,12 +1,22 @@
-import { useCallback, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 
-export const useWebsocket = () => {
+const WebsocketContext = createContext();
+
+export const WebsocketProvider = ({ children }) => {
   const [messages, setMessages] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef(null);
 
   const connectWebsocket = useCallback(() => {
     if (socketRef.current?.readyState === WebSocket.OPEN) return;
+    if (isConnected) return;
 
     const ws = new WebSocket('ws://localhost:8000/ws');
 
@@ -18,14 +28,14 @@ export const useWebsocket = () => {
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
 
-      if (data.dialog && data.npc_id && data.suspicion_level) {
+      if (data.dialog) {
         setMessages((prev) => [
           ...prev,
           {
             type: 'dialog',
             text: data.dialog,
-            npc_id: data.npc_id,
-            suspicion_level: data.suspicion_level,
+            npc_id: data?.npc_id ?? 'unknown',
+            suspicion_level: data?.suspicion_level ?? 0,
           },
         ]);
       } else if (data.game_over) {
@@ -52,13 +62,19 @@ export const useWebsocket = () => {
     };
 
     socketRef.current = ws;
+  }, []);
 
+  // Connect to websocket on component mount
+  useEffect(() => {
+    connectWebsocket();
+
+    // Cleanup function to disconnect when component unmounts
     return () => {
       if (socketRef.current?.readyState === WebSocket.OPEN) {
         socketRef.current.close();
       }
     };
-  }, []);
+  }, [connectWebsocket]);
 
   const disconnectWebsocket = useCallback(() => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
@@ -71,11 +87,25 @@ export const useWebsocket = () => {
     setMessages([]);
   }, []);
 
-  return {
-    messages,
-    isConnected,
-    connectWebsocket,
-    disconnectWebsocket,
-    clearMessages,
-  };
+  return (
+    <WebsocketContext.Provider
+      value={{
+        messages,
+        isConnected,
+        connectWebsocket,
+        disconnectWebsocket,
+        clearMessages,
+      }}
+    >
+      {children}
+    </WebsocketContext.Provider>
+  );
+};
+
+export const useWebsocket = () => {
+  const context = useContext(WebsocketContext);
+  if (context === undefined) {
+    throw new Error('useWebsocket must be used within a WebsocketProvider');
+  }
+  return context;
 };

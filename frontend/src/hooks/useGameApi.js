@@ -5,6 +5,7 @@ export const useGameApi = () => {
 
   const startGame = useCallback(async () => {
     try {
+      console.log('Starting game');
       const response = await fetch(`${BASE_URL}/start-game`, {
         method: 'POST',
         headers: {
@@ -25,6 +26,7 @@ export const useGameApi = () => {
 
   const startRecording = useCallback(async () => {
     try {
+      console.log('Starting recording');
       const response = await fetch(`${BASE_URL}/recording/start`, {
         method: 'POST',
         headers: {
@@ -45,6 +47,7 @@ export const useGameApi = () => {
 
   const stopRecording = useCallback(async () => {
     try {
+      console.log('Stopping recording');
       const response = await fetch(`${BASE_URL}/recording/stop`, {
         method: 'POST',
         headers: {
