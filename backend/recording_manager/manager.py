@@ -1,4 +1,3 @@
-import time
 import uuid
 import logging
 from typing import Dict, Any, Optional
@@ -15,7 +14,7 @@ class RecordingResult(BaseModel):
     """Model for recording results"""
 
     recording_id: str
-    video_file: Optional[str] = None
+    file_path: Optional[str] = None
 
 
 class RecordingStatus(BaseModel):
@@ -27,13 +26,12 @@ class RecordingStatus(BaseModel):
 
 class RecordingManager:
     """
-    Manages audio and video recording sessions.
-    Coordinates the recording, processing, and cleanup of audio and video data.
-    Processes audio to extract speech text and video to extract emotion data.
+    Manages video recording sessions.
+    Coordinates the recording, processing, and cleanup of video data.
     """
 
     def __init__(self):
-        """Initialize the recording manager with audio and video recorders"""
+        """Initialize the recording manager with video recorder"""
         self.video_recorder = VideoRecorder()
 
         self.current_recording_id: Optional[str] = None
@@ -43,7 +41,7 @@ class RecordingManager:
 
     def start_recording(self) -> Dict[str, Any]:
         """
-        Start a new recording session for both audio and video
+        Start a new recording session for video
 
         Returns:
             Dictionary with recording session information
@@ -63,10 +61,10 @@ class RecordingManager:
 
     def stop_recording(self) -> RecordingResult:
         """
-        Stop the current recording session and process the results
+        Stop the current recording session
 
         Returns:
-            RecordingResult object with processed data
+            RecordingResult object with video file
         """
         if not self.is_recording:
             logger.warning("Not currently recording")
@@ -78,7 +76,7 @@ class RecordingManager:
 
         result = RecordingResult(
             recording_id=recording_id,
-            video_file=video_result.get("filename"),
+            file_path=video_result.get("filename"),
         )
 
         return result

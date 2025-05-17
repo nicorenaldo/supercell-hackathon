@@ -3,11 +3,13 @@ import cv2
 import os
 from moviepy import VideoFileClip
 from deepface import DeepFace
-from time import sleep, time
-from fer import FER
+from time import time
 import numpy as np
 
-def validate_video(video_path):
+def validate_video(video_path: str) -> bool:
+    '''
+    Validates the video file to make sure it is not corrupted.
+    '''
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise ValueError(f"Could not open video file: {video_path}")
@@ -17,16 +19,18 @@ def validate_video(video_path):
         raise ValueError(f"Could not read frames from video file: {video_path}")
     return True
 
-# Step 1: Transcribe audio with timestamps
-def transcribe_audio(video_path):
+def transcribe_audio(video_path: str) -> list[dict]:
+    '''
+    Transcribes the audio from the video file and returns the segments with timestamps.
+    '''
     validate_video(video_path)  # Add validation check
     audio_path = extract_audio_from_video(video_path)
     model = whisper.load_model("base")
     result = model.transcribe(audio_path, word_timestamps=True)
     return result['segments']
 
-# Step 2: Extract multiple frames per sentence
-def extract_frames(video_path, segments, n=3, output_folder='frames'):
+
+def extract_frames(video_path: str, segments: list[dict], n: int = 3, output_folder: str = 'frames') -> list[tuple[list[str], float, float, str]]:
     """Extract n frames from each segment with uniform distribution.
     Args:
         video_path: Path to video file
@@ -75,7 +79,10 @@ def extract_frames(video_path, segments, n=3, output_folder='frames'):
     video.release()
     return frame_data
 
-def preprocess_image(img):
+def preprocess_image(img: np.ndarray) -> np.ndarray:
+    '''
+    Resizes the image to a reasonable size while maintaining the aspect ratio.
+    '''
     # Resize to a reasonable size while maintaining aspect ratio
     height, width = img.shape[:2]
     max_dim = 640
@@ -86,8 +93,12 @@ def preprocess_image(img):
         img = cv2.resize(img, (new_width, new_height))
     return img
 
-# Step 3: Emotion analysis with probability output
-def detect_emotions(frames):
+def detect_emotions(frames: list[tuple[list[str], float, float, str]]) -> list[dict]:
+    '''
+    Detects the emotions from the frames and returns the emotions with probabilities.
+    Uses DeepFace to detect the emotions.
+    Returns a list of dictionaries with the emotions and probabilities.
+    '''
     results = []
     for frame_paths, start, end, text in frames:
         emotion_probs_all = []
@@ -137,7 +148,10 @@ def detect_emotions(frames):
         })
     return results
 
-def extract_audio_from_video(video_path, output_audio="temp.wav"):
+def extract_audio_from_video(video_path: str, output_audio: str = "temp.wav") -> str:
+    '''
+    Extracts the audio from the video file and saves it as a temporary file.
+    '''
     clip = VideoFileClip(video_path)
     clip.audio.write_audiofile(output_audio)
     return output_audio

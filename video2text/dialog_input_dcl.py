@@ -2,6 +2,10 @@ from utils import transcribe_audio, extract_frames, detect_emotions
 import os
 
 class Emotions:
+    '''
+    Dataclass for emotions.
+    Normalizes the emotions to percentages
+    '''
     def __init__(self, emotion_probs: dict):
         self.angry: float = emotion_probs['angry']
         self.disgust: float = emotion_probs['disgust']
@@ -13,6 +17,9 @@ class Emotions:
         self.normalize()
 
     def normalize(self):
+        '''
+        Normalizes the emotions to percentages sum up to 1
+        '''
         # Get all attributes that don't start with __
         emotion_values = {k: v for k, v in self.__dict__.items() 
                          if not k.startswith('__')}
@@ -26,6 +33,10 @@ class Emotions:
             setattr(self, k, (v/total))
 
 class DialogInputDCL:
+    '''
+    Dataclass for dialog input.
+    Extracts emotions and sentences from a video file.
+    '''
     def __init__(self,
                  video_file: str = "sample_video.mp4",
                  frames_per_sentence: int = 3
@@ -41,6 +52,9 @@ class DialogInputDCL:
 
 
     def get_dialog_input(self, file_path: str):
+        '''
+        Extracts emotions and sentences from a video file.
+        '''
         if not os.path.isabs(file_path):
             # If relative path is provided, make it absolute relative to script location
             video_file = os.path.join(os.path.dirname(__file__), file_path)
@@ -56,6 +70,7 @@ class DialogInputDCL:
         # Detect emotions from the frames. These are probabilities, stored in Emotions objects.
         emotions = detect_emotions(frames)
 
+        # Populate the dataclass with the emotions and sentences.
         for entry in emotions:
             self.emotions.append(Emotions(entry['emotions']))
             self.sentences.append(entry['text'])
