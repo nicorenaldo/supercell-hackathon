@@ -1,0 +1,29 @@
+from setuptools import setup, find_packages
+
+setup(
+    name='emotion_transcriber',
+    version='0.1.0',
+    packages=find_packages(),
+    install_requires=[
+        'openai-whisper',
+        'ffmpeg-python',
+        'torchaudio',
+        'torch',
+        'deepface',
+        'opencv-python',
+        'numpy',
+        'matplotlib',
+        'moviepy',
+        'faster-whisper',
+        'pyaudio',
+        'sounddevice'
+    ],
+    entry_points={
+        'console_scripts': [
+            'emotion-transcriber=main:main',
+        ],
+    },
+    author='Pauli Paaso',
+    description='Transcribe audio with timestamps and detect emotions from matching video frames.',
+    python_requires='>=3.8',
+)
