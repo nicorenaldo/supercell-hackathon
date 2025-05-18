@@ -4,18 +4,29 @@ import 'react-toastify/dist/ReactToastify.css';
 import { Experience } from './components/Experience';
 import { UIOverlay } from './components/UIOverlay';
 import { TextToSpeechProvider } from './contexts/TextToSpeechContext';
-import { WebsocketProvider } from './contexts/WebsocketContext';
+import { WebsocketProvider, useWebsocket } from './contexts/WebsocketContext';
+
+// Create a wrapper component that can access the WebsocketContext
+const AppContent = () => {
+  const { gameID } = useWebsocket();
+
+  return (
+    <>
+      <UIOverlay />
+      <Canvas camera={{ fov: 30, position: [0, 0, 48] }}>
+        <color attach='background' args={['#ececec']} />
+        <Experience />
+      </Canvas>
+      <ToastContainer />
+    </>
+  );
+};
 
 function App() {
   return (
     <WebsocketProvider>
       <TextToSpeechProvider>
-        <UIOverlay />
-        <Canvas shadows camera={{ position: [0, 0, 8], fov: 42 }}>
-          <color attach='background' args={['#ececec']} />
-          <Experience />
-        </Canvas>
-        <ToastContainer />
+        <AppContent />
       </TextToSpeechProvider>
     </WebsocketProvider>
   );

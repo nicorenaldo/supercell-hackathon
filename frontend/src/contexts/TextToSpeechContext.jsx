@@ -10,7 +10,6 @@ import { useTextToSpeech } from '../hooks/useTextToSpeech';
 const TextToSpeechContext = createContext();
 
 export const TextToSpeechProvider = ({ children }) => {
-  const [isSpeechEnabled, setIsSpeechEnabled] = useState(true);
   const [userInteracted, setUserInteracted] = useState(false);
   const tts = useTextToSpeech();
 
@@ -34,45 +33,29 @@ export const TextToSpeechProvider = ({ children }) => {
 
   const speakText = useCallback(
     (text, npcId = 'default') => {
-      if (!isSpeechEnabled || !text) return;
-
       if (userInteracted) {
-        // Use the queue system directly
         tts.queueAudio(text, npcId);
       } else {
-        // Store callback to execute once user interacts
-        const handler = () => {
+        // Set up a one-time event handler that will speak the text once user interacts
+        const handleFirstInteraction = () => {
           tts.queueAudio(text, npcId);
-          window.removeEventListener('click', handler);
-          window.removeEventListener('keydown', handler);
-          window.removeEventListener('touchstart', handler);
+          // Remove this handler after first interaction
+          window.removeEventListener('click', handleFirstInteraction);
+          window.removeEventListener('keydown', handleFirstInteraction);
+          window.removeEventListener('touchstart', handleFirstInteraction);
         };
 
-        window.addEventListener('click', handler);
-        window.addEventListener('keydown', handler);
-        window.addEventListener('touchstart', handler);
+        window.addEventListener('click', handleFirstInteraction);
+        window.addEventListener('keydown', handleFirstInteraction);
+        window.addEventListener('touchstart', handleFirstInteraction);
       }
     },
-    [isSpeechEnabled, tts, userInteracted]
+    [tts, userInteracted]
   );
-
-  const toggleSpeech = useCallback(() => {
-    setIsSpeechEnabled((prev) => {
-      const newValue = !prev;
-      if (!newValue) {
-        // If disabling speech, stop any current audio
-        tts.stopAudio();
-      }
-      return newValue;
-    });
-    setUserInteracted(true); // Mark as interacted when user toggles speech
-  }, [tts]);
 
   return (
     <TextToSpeechContext.Provider
       value={{
-        isSpeechEnabled,
-        toggleSpeech,
         speakText,
         isLoading: tts.isLoading,
         error: tts.error,

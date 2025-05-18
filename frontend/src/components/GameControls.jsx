@@ -1,102 +1,95 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { useTextToSpeechContext } from '../contexts/TextToSpeechContext';
-import { useGameApi } from '../hooks/useGameApi';
-import '../styles/GameControls.css';
+import { useWebsocket } from '../contexts/WebsocketContext';
 
-export const GameControls = ({ wsConnected, gameStarted, onStart }) => {
-  const { startRecording, stopRecording } = useGameApi();
+export const GameControls = ({ isUploading, isRecording, setIsRecording }) => {
   const {
-    isSpeechEnabled,
-    toggleSpeech,
     stopAudio,
     clearQueue,
     isPlaying,
     error: audioError,
   } = useTextToSpeechContext();
-  const [isRecording, setIsRecording] = useState(false);
+  const { gameID, startGame } = useWebsocket();
   const [isLoading, setIsLoading] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
 
+  // Handle any audio errors
   useEffect(() => {
     if (audioError) {
-      toast.error('Audio error:', audioError);
+      toast.error(`Audio error: ${audioError}`);
     }
   }, [audioError]);
 
-  const handleStartRecording = async () => {
+  const handleStartGame = async () => {
     try {
-      // Stop all audio before recording starts
-      stopAudio();
-      clearQueue();
-
       setIsLoading(true);
-      await startRecording();
-      setIsRecording(true);
+      await startGame();
+      setGameStarted(true);
     } catch (error) {
-      console.error('Error starting recording:', error);
+      console.error('Error starting game:', error);
+      toast.error('Failed to start game');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleStopRecording = async () => {
-    try {
-      setIsLoading(true);
-      await stopRecording();
-      setIsRecording(false);
-    } catch (error) {
-      console.error('Error stopping recording:', error);
-    } finally {
-      setIsLoading(false);
+  const handleToggleRecording = () => {
+    if (!gameID) {
+      toast.error('No game ID found');
+      return;
     }
-  };
 
-  const handleStopAllSpeech = () => {
+    // Stop all audio before recording starts/stops
     stopAudio();
     clearQueue();
+
+    setIsRecording(!isRecording);
   };
 
+  // Common button classes
+  const buttonBase =
+    'flex-1 min-w-[120px] py-2 px-4 rounded-full font-semibold text-sm cursor-pointer transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-gray-500';
+  const startButtonClass = `${buttonBase} bg-green-500/15 text-green-100/70 hover:bg-green-500/30 hover:text-green-100 hover:-translate-y-0.5 shadow-md hover:shadow-lg`;
+  const stopButtonClass = `${buttonBase} bg-red-500/15 text-red-100/70 hover:bg-red-500/30 hover:text-red-100 hover:-translate-y-0.5 shadow-md hover:shadow-lg`;
+
   return (
-    <div className='game-controls'>
-      {!gameStarted && (
-        <button onClick={onStart} className='game-button start-button'>
-          {isLoading ? 'Starting...' : 'Start Game'}
-        </button>
-      )}
-
-      <button
-        onClick={handleStartRecording}
-        disabled={isRecording || isLoading}
-        className='game-button start-button'
-      >
-        {isLoading && !isRecording ? 'Starting...' : 'Start Recording'}
-      </button>
-
-      <button
-        onClick={handleStopRecording}
-        disabled={!isRecording || isLoading}
-        className='game-button stop-button'
-      >
-        {isLoading && isRecording ? 'Stopping...' : 'Stop Recording'}
-      </button>
-
-      <button
-        onClick={toggleSpeech}
-        className={`game-button ${
-          isSpeechEnabled ? 'stop-button' : 'start-button'
-        }`}
-      >
-        {isSpeechEnabled ? 'Disable Speech' : 'Enable Speech'}
-      </button>
-
-      {isPlaying && (
+    <>
+      <div className='flex gap-3 p-3 bg-black/45 rounded-xl shadow-lg z-10 backdrop-blur-sm max-w-sm mx-auto whitespace-nowrap'>
+        {!gameStarted && (
+          <button
+            onClick={handleStartGame}
+            className={startButtonClass}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Starting...' : 'Start Game'}
+          </button>
+        )}
+        {isPlaying && (
+          <button
+            onClick={() => {
+              stopAudio();
+              clearQueue();
+            }}
+            className={stopButtonClass}
+          >
+            Stop Speech
+          </button>
+        )}
         <button
-          onClick={handleStopAllSpeech}
-          className='game-button stop-button'
+          onClick={handleToggleRecording}
+          disabled={isLoading || (!gameStarted && !isRecording) || isUploading}
+          className={isRecording ? stopButtonClass : startButtonClass}
         >
-          Stop Speech
+          {isLoading
+            ? 'Loading...'
+            : isUploading
+            ? 'Uploading...'
+            : isRecording
+            ? 'Stop Recording'
+            : 'Start Recording'}
         </button>
-      )}
-    </div>
+      </div>
+    </>
   );
 };

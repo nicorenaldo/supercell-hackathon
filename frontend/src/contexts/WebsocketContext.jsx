@@ -10,6 +10,7 @@ import {
 const WebsocketContext = createContext();
 
 export const WebsocketProvider = ({ children }) => {
+  const [gameID, setGameID] = useState(null);
   const [messages, setMessages] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef(null);
@@ -18,7 +19,7 @@ export const WebsocketProvider = ({ children }) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) return;
     if (isConnected) return;
 
-    const ws = new WebSocket('ws://localhost:8000/ws');
+    const ws = new WebSocket(import.meta.env.VITE_WS_URL);
 
     ws.onopen = () => {
       console.log('WebSocket connected');
@@ -55,6 +56,9 @@ export const WebsocketProvider = ({ children }) => {
             achievements: data.achievement_unlocked,
           },
         ]);
+      } else if (data.game_id) {
+        console.log('Game ID:', data.game_id);
+        setGameID(data.game_id);
       }
     };
 
@@ -70,6 +74,25 @@ export const WebsocketProvider = ({ children }) => {
 
     socketRef.current = ws;
   }, []);
+
+  const startGame = useCallback(() => {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      connectWebsocket();
+      // Give a small delay to ensure connection is established before sending
+      setTimeout(() => {
+        if (
+          socketRef.current &&
+          socketRef.current.readyState === WebSocket.OPEN
+        ) {
+          socketRef.current.send(JSON.stringify({ action: 'start' }));
+        } else {
+          console.error('WebSocket not connected. Unable to start game.');
+        }
+      }, 500);
+    } else {
+      socketRef.current.send(JSON.stringify({ action: 'start' }));
+    }
+  }, [connectWebsocket]);
 
   // Connect to websocket on component mount
   useEffect(() => {
@@ -97,11 +120,13 @@ export const WebsocketProvider = ({ children }) => {
   return (
     <WebsocketContext.Provider
       value={{
+        gameID,
         messages,
         isConnected,
         connectWebsocket,
         disconnectWebsocket,
         clearMessages,
+        startGame,
       }}
     >
       {children}

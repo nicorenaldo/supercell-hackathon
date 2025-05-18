@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import '../styles/ChatBox.css';
 
 export const ChatBox = ({ messages, isConnected }) => {
   const chatBoxRef = useRef(null);
@@ -17,8 +16,12 @@ export const ChatBox = ({ messages, isConnected }) => {
     switch (message.type) {
       case 'dialog':
         return (
-          <div key={index} className='chat-message dialog'>
-            <span className='npc-name'>{message.npc_id}:</span> {message.text}
+          <div
+            key={index}
+            className='p-2 rounded-md bg-blue-600/60 max-w-[90%] break-words'
+          >
+            <span className='font-bold text-yellow-300'>{message.npc_id}:</span>{' '}
+            {message.text}
           </div>
         );
       case 'game_over':
@@ -26,26 +29,31 @@ export const ChatBox = ({ messages, isConnected }) => {
         return (
           <div
             key={index}
-            className={`chat-message game-over ${
-              isSuccess ? 'success' : 'failure'
+            className={`p-3 rounded-md text-center font-bold mx-auto w-4/5 ${
+              isSuccess ? 'bg-green-600/60' : 'bg-red-600/60'
             }`}
           >
-            <div className='game-over-header'>
+            <div className='text-lg mb-2'>
               {isSuccess ? 'Mission Complete!' : 'Game Over!'}
             </div>
-            <div className='game-over-analysis'>{message.analysis}</div>
+            <div className='font-normal text-sm leading-tight'>
+              {message.analysis}
+            </div>
           </div>
         );
       case 'achievement':
         return (
-          <div key={index} className='chat-message achievement'>
-            <div className='achievement-header'>Achievement Unlocked!</div>
+          <div
+            key={index}
+            className='p-2 rounded-md bg-yellow-500/60 text-black'
+          >
+            <div className='font-bold mb-2 text-center text-yellow-900'>
+              Achievement Unlocked!
+            </div>
             {message.achievements.map((achievement, i) => (
-              <div key={i} className='achievement-item'>
-                <div className='achievement-name'>{achievement.name}</div>
-                <div className='achievement-description'>
-                  {achievement.description}
-                </div>
+              <div key={i} className='mb-1.5 p-1 bg-white/20 rounded'>
+                <div className='font-bold mb-0.5'>{achievement.name}</div>
+                <div className='text-xs'>{achievement.description}</div>
               </div>
             ))}
           </div>
@@ -56,32 +64,31 @@ export const ChatBox = ({ messages, isConnected }) => {
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        bottom: '20px',
-        right: '20px',
-        zIndex: 9999,
-        pointerEvents: 'auto',
-      }}
-    >
-      <div className='chat-box-container'>
-        <div className='chat-box-header'>
-          <h3>Game Chat</h3>
+    <div className='fixed bottom-5 right-5 z-[9999] pointer-events-auto'>
+      <div className='w-[500px] h-[400px] bg-black/70 rounded-lg text-white flex flex-col overflow-hidden shadow-lg'>
+        <div className='flex justify-between items-center p-2.5 bg-black/80 border-b border-white/10'>
+          <h3 className='m-0 text-base'>Game Chat</h3>
 
-          <div>Suspicion: {latestSuspicionPoint}/10</div>
+          <div className='color-red-500'>
+            Suspicion: {latestSuspicionPoint}/10
+          </div>
 
           <div
-            className={`connection-status ${
-              isConnected ? 'connected' : 'disconnected'
+            className={`text-xs py-1 px-2 rounded-full ${
+              isConnected ? 'bg-green-500' : 'bg-red-500'
             }`}
           >
             {isConnected ? 'Connected' : 'Disconnected'}
           </div>
         </div>
-        <div className='chat-box-messages' ref={chatBoxRef}>
+        <div
+          className='flex-1 overflow-y-auto p-2.5 flex flex-col gap-2'
+          ref={chatBoxRef}
+        >
           {messages.length === 0 ? (
-            <div className='empty-chat'>No messages yet...</div>
+            <div className='text-center text-white/60 m-auto'>
+              No messages yet...
+            </div>
           ) : (
             messages.map((message, index) => renderMessage(message, index))
           )}

@@ -56,122 +56,109 @@ export const useTextToSpeech = () => {
     },
   };
 
-  const synthesizeSpeech = useCallback(
-    async (text, npcId = 'default', options = {}) => {
-      const projectId = import.meta.env.VITE_GOOGLE_PROJECT_ID;
-      const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
+  const synthesizeSpeech = useCallback(async (text, npcId = 'default') => {
+    const projectId = import.meta.env.VITE_GOOGLE_PROJECT_ID;
+    const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
 
-      if (!projectId || !apiKey) {
-        console.error('Missing Google Cloud credentials');
-        setError('Missing Google Cloud credentials');
-        return null;
+    if (!projectId || !apiKey) {
+      console.error('Missing Google Cloud credentials');
+      setError('Missing Google Cloud credentials');
+      return null;
+    }
+
+    try {
+      let voiceOptions = npcVoiceConfigs[npcId];
+      if (!voiceOptions) {
+        voiceOptions = npcVoiceConfigs.default;
       }
+      setIsLoading(true);
+      setError(null);
 
-      // Get voice config for the specified NPC, fall back to default if not found
-      const npcConfig = npcVoiceConfigs[npcId] || npcVoiceConfigs.default;
-
-      const defaultOptions = {
-        ...npcConfig,
-        ...options,
-      };
-
-      try {
-        setIsLoading(true);
-        setError(null);
-
-        const response = await fetch(
-          `https://texttospeech.googleapis.com/v1/text:synthesize`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Goog-User-Project': projectId,
-              Authorization: `Bearer ${apiKey}`,
+      const response = await fetch(
+        `https://texttospeech.googleapis.com/v1/text:synthesize`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-User-Project': projectId,
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            input: { markup: text },
+            voice: {
+              languageCode: voiceOptions.languageCode,
+              name: voiceOptions.name,
             },
-            body: JSON.stringify({
-              input: { markup: text },
-              voice: {
-                languageCode: defaultOptions.languageCode,
-                ssmlGender: defaultOptions.ssmlGender,
-                name: defaultOptions.name,
-              },
-              audioConfig: { audioEncoding: 'MP3' },
-            }),
-          }
-        );
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(
-            errorData.error?.message || 'Failed to synthesize speech'
-          );
+            audioConfig: { audioEncoding: 'MP3' },
+          }),
         }
+      );
 
-        const data = await response.json();
-        const audioContent = data.audioContent;
-
-        // Create audio element with the received base64 audio data
-        const audioSource = `data:audio/mp3;base64,${audioContent}`;
-        const audioElement = new Audio(audioSource);
-
-        return audioElement;
-      } catch (err) {
-        setError(err.message);
-        return null;
-      } finally {
-        setIsLoading(false);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.error?.message || 'Failed to synthesize speech'
+        );
       }
-    },
-    []
-  );
+
+      const data = await response.json();
+      const audioContent = data.audioContent;
+      const audioSource = `data:audio/mp3;base64,${audioContent}`;
+      return new Audio(audioSource);
+    } catch (err) {
+      setError(err.message);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   const processQueue = useCallback(async () => {
-    if (
-      processingQueue.current ||
-      audioQueue.current.length === 0 ||
-      isPlaying
-    ) {
+    if (processingQueue.current || audioQueue.current.length === 0) {
       return;
     }
 
     processingQueue.current = true;
 
-    const nextItem = audioQueue.current.shift();
-    if (!nextItem) {
-      processingQueue.current = false;
-      return;
-    }
-
-    const { text, npcId } = nextItem;
-
     try {
+      const { text, npcId } = audioQueue.current.shift();
       const audioElement = await synthesizeSpeech(text, npcId);
+
       if (audioElement) {
         setAudio(audioElement);
         setIsPlaying(true);
 
         audioElement.onended = () => {
           setIsPlaying(false);
-          // Process the next item in the queue
-          setTimeout(() => {
-            processingQueue.current = false;
-            processQueue();
-          }, 300); // Small delay between audio clips
+          processingQueue.current = false;
+          // Process next item with a small delay
+          setTimeout(processQueue, 300);
         };
 
-        audioElement.play();
+        // Handle possible errors during playback
+        audioElement.onerror = () => {
+          setIsPlaying(false);
+          processingQueue.current = false;
+          setTimeout(processQueue, 300);
+        };
+
+        audioElement.play().catch((err) => {
+          console.error('Error playing audio:', err);
+          setIsPlaying(false);
+          processingQueue.current = false;
+          setTimeout(processQueue, 300);
+        });
       } else {
         processingQueue.current = false;
-        processQueue(); // Continue with next item if this one failed
+        processQueue();
       }
     } catch (error) {
-      console.error('Error playing audio:', error);
+      console.error('Error in audio queue processing:', error);
       processingQueue.current = false;
-      processQueue(); // Continue with next item if this one failed
+      processQueue();
     }
-  }, [synthesizeSpeech, isPlaying]);
+  }, [synthesizeSpeech]);
 
-  // Add to queue and start processing if not already
   const queueAudio = useCallback(
     (text, npcId = 'default') => {
       if (!text) return;
@@ -182,29 +169,15 @@ export const useTextToSpeech = () => {
     [processQueue]
   );
 
-  const playAudio = useCallback(
-    (npcId = 'default', text = '') => {
-      if (text) {
-        queueAudio(text, npcId);
-      } else if (audio && !isPlaying) {
-        setIsPlaying(true);
-        audio.play();
-        audio.onended = () => {
-          setIsPlaying(false);
-        };
-      }
-    },
-    [audio, queueAudio, isPlaying]
-  );
-
   const stopAudio = useCallback(() => {
     if (audio) {
       audio.pause();
       audio.currentTime = 0;
       setIsPlaying(false);
     }
-    // Clear the queue
-    audioQueue.current = [];
+    processingQueue.current = false;
+    // Critical: ensure we reset the audio state properly
+    setAudio(null);
   }, [audio]);
 
   const clearQueue = useCallback(() => {
@@ -213,12 +186,11 @@ export const useTextToSpeech = () => {
 
   return {
     synthesizeSpeech,
-    playAudio,
+    playAudio: queueAudio, // Simplify API by making playAudio alias to queueAudio
     stopAudio,
     clearQueue,
     isLoading,
     error,
-    audio,
     isPlaying,
     queueAudio,
     npcVoiceConfigs,
