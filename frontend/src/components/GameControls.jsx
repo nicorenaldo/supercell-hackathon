@@ -15,16 +15,6 @@ export const GameControls = ({ isUploading, isRecording, setIsRecording }) => {
   const [gameStarted, setGameStarted] = useState(false);
   const [showPointer, setShowPointer] = useState(true);
 
-  // Show the pointer for first-time users
-  useEffect(() => {
-    setShowPointer(true);
-    // Hide pointer after 10 seconds
-    const timer = setTimeout(() => {
-      setShowPointer(false);
-    }, 10000);
-    return () => clearTimeout(timer);
-  }, []);
-
   // Handle any audio errors
   useEffect(() => {
     if (audioError) {
