@@ -10,3 +10,4 @@ recordings/
 .env*
 env
 frames/
+dovi-*.json

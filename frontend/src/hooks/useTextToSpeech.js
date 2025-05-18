@@ -1,6 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 
 export const useTextToSpeech = () => {
+  const BASE_URL = import.meta.env.VITE_BACKEND_URL;
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [audio, setAudio] = useState(null);
@@ -57,15 +59,6 @@ export const useTextToSpeech = () => {
   };
 
   const synthesizeSpeech = useCallback(async (text, npcId = 'default') => {
-    const projectId = import.meta.env.VITE_GOOGLE_PROJECT_ID;
-    const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
-
-    if (!projectId || !apiKey) {
-      console.error('Missing Google Cloud credentials');
-      setError('Missing Google Cloud credentials');
-      return null;
-    }
-
     try {
       let voiceOptions = npcVoiceConfigs[npcId];
       if (!voiceOptions) {
@@ -74,25 +67,17 @@ export const useTextToSpeech = () => {
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch(
-        `https://texttospeech.googleapis.com/v1/text:synthesize`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Goog-User-Project': projectId,
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            input: { markup: text },
-            voice: {
-              languageCode: voiceOptions.languageCode,
-              name: voiceOptions.name,
-            },
-            audioConfig: { audioEncoding: 'MP3' },
-          }),
-        }
-      );
+      const response = await fetch(`${BASE_URL}/api/synthesize-speech`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text,
+          npcId,
+          voiceOptions,
+        }),
+      });
 
       if (!response.ok) {
         const errorData = await response.json();

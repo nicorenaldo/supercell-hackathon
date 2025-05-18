@@ -15,6 +15,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import logging
 import tempfile
+from pydantic import BaseModel
+import google.auth
+import google.auth.transport.requests
+from google.oauth2 import service_account
+import requests
 
 from flask import json
 
@@ -45,6 +50,12 @@ websocket_connections: Dict[str, WebSocket] = {}
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class TextToSpeechRequest(BaseModel):
+    text: str
+    npcId: str
+    voiceOptions: dict
 
 
 @app.get("/")
@@ -215,6 +226,62 @@ async def shutdown_event():
     """Event handler for application shutdown"""
     logger.info("Application shutting down, cleaning up resources")
     recording_manager.cleanup()
+
+
+@app.post("/api/synthesize-speech")
+async def synthesize_speech(request: TextToSpeechRequest):
+    """Proxy requests to Google Text-to-Speech API"""
+    try:
+        # Get Google Cloud credentials from environment
+        project_id = os.getenv("GOOGLE_PROJECT_ID")
+        print(f"Project ID: {project_id}")
+        # Use a service account key file or Application Default Credentials
+        # Option 1: Using service account key file
+        service_account_key = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        if service_account_key:
+            credentials = service_account.Credentials.from_service_account_file(
+                service_account_key, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+        else:
+            # Option 2: Use Application Default Credentials
+            credentials, project = google.auth.default(
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+
+        # Make sure credentials are valid
+        auth_req = google.auth.transport.requests.Request()
+        credentials.refresh(auth_req)
+
+        # Prepare request to Google TTS API
+        voice_options = request.voiceOptions
+        tts_request = {
+            "input": {"text": request.text},
+            "voice": {
+                "languageCode": voice_options["languageCode"],
+                "name": voice_options["name"],
+            },
+            "audioConfig": {"audioEncoding": "MP3"},
+        }
+
+        headers = {
+            "Authorization": f"Bearer {credentials.token}",
+            "Content-Type": "application/json",
+        }
+
+        response = requests.post(
+            f"https://texttospeech.googleapis.com/v1/text:synthesize",
+            headers=headers,
+            json=tts_request,
+        )
+
+        if not response.ok:
+            return {"error": {"message": f"TTS API error: {response.text}"}}
+
+        return response.json()
+
+    except Exception as e:
+        logger.error(f"Error in text-to-speech: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
