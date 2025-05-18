@@ -96,6 +96,9 @@ export const GameControls = ({ isUploading, isRecording, setIsRecording }) => {
                 }}
               >
                 ↑ <span className='text-sm'>Click here to start!</span>
+                <span className='text-sm'>
+                  Use big expressions to have the best experience!
+                </span>
               </div>
             )}
             <button
