@@ -65,7 +65,7 @@ export const ChatBox = ({ messages, isConnected }) => {
 
   return (
     <div className='fixed bottom-5 right-5 z-[9999] pointer-events-auto'>
-      <div className='w-[500px] h-[400px] bg-black/70 rounded-lg text-white flex flex-col overflow-hidden shadow-lg'>
+      <div className='w-[400px] h-[400px] bg-black/70 rounded-lg text-white flex flex-col overflow-hidden shadow-lg'>
         <div className='flex justify-between items-center p-2.5 bg-black/80 border-b border-white/10'>
           <h3 className='m-0 text-base'>Game Chat</h3>
 
