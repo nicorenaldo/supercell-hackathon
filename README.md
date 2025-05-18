@@ -10,6 +10,8 @@ This project is an interactive web game that uses emotion detection and speech r
 
 [Watch the demo video](https://youtu.be/LzBpoknIJgM)
 
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/LzBpoknIJgM/0.jpg)](https://www.youtube.com/watch?v=LzBpoknIJgM)
+
 ## Features
 
 - **Emotion Detection**: Uses your webcam to analyze facial expressions and detect your emotional state
