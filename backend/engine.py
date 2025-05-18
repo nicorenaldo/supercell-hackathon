@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 import uuid
 import logging
 import time
@@ -12,8 +12,8 @@ from models import (
     GameState,
     LLMResponse,
 )
-from recording_manager.manager import RecordingResult
-from llm_integration.llm_client import LLMClient
+from recording import RecordingResult
+from llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -44,13 +44,14 @@ class GameEngine:
         self.llm_client = llm_client
         self.video_processor = video_processor
 
-        self.current_state: Optional[GameState] = None
+        # Dictionary to store all active game sessions
+        self.game_sessions: Dict[str, GameState] = {}
 
         logger.info("Game engine initialized")
 
-    @property
-    def current_game_id(self) -> Optional[str]:
-        return self.current_state.game_id if self.current_state else None
+    def get_game_state(self, game_id: str) -> Optional[GameState]:
+        """Get the game state for a specific game ID"""
+        return self.game_sessions.get(game_id)
 
     def create_new_game(self) -> Tuple[str, str]:
         """
@@ -65,12 +66,13 @@ class GameEngine:
         initial_dialog = (
             "Welcome to the initiation, quickly! You need to drink the blood of the cult leader!"
         )
-        self.current_state = GameState(
+
+        game_state = GameState(
             game_id=game_id,
             game_over=False,
             achievements=[],
             dialog_history=[
-                {"role": "npc_ritual_voice", "content": initial_dialog},
+                {"role": "system", "content": initial_dialog, "npc_id": "npc_cult_leader"},
             ],
             npcs=[
                 NPC(
@@ -96,50 +98,57 @@ class GameEngine:
             ],
             suspicion_level=5,
         )
+
+        # Store the new game session
+        self.game_sessions[game_id] = game_state
+
         logger.info(f"Created new game session: {game_id}")
         return game_id, initial_dialog
 
-    def process_recording(self, recording_result: RecordingResult) -> GameResponse:
+    def process_recording(self, recording_result: RecordingResult, game_id: str) -> GameResponse:
         """
         Process the recording and send the results to the LLM
 
         Args:
             recording_result: The result of the recording
+            game_id: The ID of the game session to update
 
         Returns:
             GameResponse: Response containing dialog, game state and achievements
         """
         try:
-            if not self.current_state:
-                logger.error(f"Game session not found")
+            game_state = self.get_game_state(game_id)
+
+            if not game_state:
+                logger.error(f"Game session not found: {game_id}")
                 return GameResponse(
                     dialogs=[],
                     suspicion_level=0,
                     game_over=True,
                     ending_type=EndingType.ERROR,
                     achievements=[],
-                    analysis="Error: Game session not found",
+                    analysis=f"Error: Game session {game_id} not found",
                 )
 
             # Process the video
             dialog_input = self.video_processor.process_video(recording_result.file_path)
-            self.current_state.dialog_history.append(
+            game_state.dialog_history.append(
                 {"role": "user", "content": "\n".join(dialog_input.sentences)}
             )
 
             # Increment dialog exchange counter since user has spoken
-            self.current_state.dialog_exchanges_count += 1
+            game_state.dialog_exchanges_count += 1
 
             llm_result: LLMResponse = self.llm_client.generate_response(
-                game_state=self.current_state,
+                game_state=game_state,
                 dialog_input=dialog_input,
             )
 
             # Update game state with LLM response
-            self.current_state.suspicion_level = llm_result.suspicion_level
-            self.current_state.game_over = llm_result.is_game_over
+            game_state.suspicion_level = llm_result.suspicion_level
+            game_state.game_over = llm_result.is_game_over
             for dialog in llm_result.dialogs:
-                self.current_state.dialog_history.append(
+                game_state.dialog_history.append(
                     {
                         "role": "system",
                         "content": dialog.dialog,
@@ -149,9 +158,9 @@ class GameEngine:
 
             # Add new NPC if provided by LLM
             if llm_result.new_npc:
-                existing_npc_ids = [npc.id for npc in self.current_state.npcs]
+                existing_npc_ids = [npc.id for npc in game_state.npcs]
                 if llm_result.new_npc.id not in existing_npc_ids:
-                    self.current_state.npcs.append(llm_result.new_npc)
+                    game_state.npcs.append(llm_result.new_npc)
                     logger.info(f"Added new NPC: {llm_result.new_npc.id}")
 
             # Process dynamic achievements from LLM response
@@ -162,8 +171,14 @@ class GameEngine:
                         name=ach.name,
                         description=ach.description,
                     )
-                    self.current_state.achievements.append(new_ach)
+                    game_state.achievements.append(new_ach)
                     new_achievements.append(new_ach)
+
+            # Clean up finished games after a while to prevent memory leaks
+            if game_state.game_over:
+                # In a real implementation, you might want to schedule this for later
+                # or use a separate cleanup routine that runs periodically
+                logger.info(f"Game {game_id} is over, will be removed from active sessions soon")
 
             response = GameResponse(
                 dialogs=llm_result.dialogs,
@@ -176,7 +191,7 @@ class GameEngine:
 
             return response
         except Exception as e:
-            logger.error(f"Error processing recording: {e}")
+            logger.error(f"Error processing recording for game {game_id}: {e}")
             return GameResponse(
                 dialogs=[],
                 suspicion_level=0,

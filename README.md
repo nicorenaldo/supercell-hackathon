@@ -4,11 +4,18 @@ A browser-based game where your emotional state and verbal responses determine t
 
 ## Overview
 
-In this game, you encounter a thug who wants to steal your purse. Your goal is to convince them not to do so by maintaining confidence and using appropriate verbal responses. The game uses:
+This project is an interactive web game that uses emotion detection and speech recognition to create a unique, personalized experience. In the game, you encounter a thug who wants to steal your purse. Your goal is to convince them not to do so by maintaining confidence and using appropriate verbal responses.
 
-- Your webcam to detect emotions
-- Your microphone to capture speech
-- An AI to determine how the scenario unfolds
+[Try it live here!](https://supercell-hackathon.vercel.app/)
+
+[Watch the demo video](https://youtu.be/LzBpoknIJgM)
+
+## Features
+
+- **Emotion Detection**: Uses your webcam to analyze facial expressions and detect your emotional state
+- **Speech Recognition**: Captures your verbal responses to influence game progression
+- **AI-Powered Interactions**: Integrates with LLM to dynamically adjust the scenario based on your reactions
+- **Immersive Experience**: Combines visual, audio, and interactive elements for an engaging game
 
 ## Project Structure
 
@@ -21,8 +28,8 @@ In this game, you encounter a thug who wants to steal your purse. Your goal is t
 │   ├── llm_integration/   # LLM API integration
 │   └── requirements.txt   # Python dependencies
 ├── frontend/              # Web frontend
-├── docs/                  # Documentation
-└── README.md              # This file
+├── video2text/            # Video processing utilities
+└── README.md              # Project documentation
 ```
 
 ## Setup Instructions
@@ -30,12 +37,19 @@ In this game, you encounter a thug who wants to steal your purse. Your goal is t
 ### Prerequisites
 
 - Python 3.8+
-- Node.js 14+ (for development server)
+- Node.js 14+ (for development)
 - Web browser with camera and microphone access
 
 ### Backend Setup
 
-1. Create a virtual environment:
+1. Clone the repository:
+
+   ```
+   git clone <repository-url>
+   cd <repository-name>
+   ```
+
+2. Create a virtual environment:
 
    ```
    cd backend
@@ -43,20 +57,20 @@ In this game, you encounter a thug who wants to steal your purse. Your goal is t
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
-2. Install dependencies:
+3. Install dependencies:
 
    ```
    pip install -r requirements.txt
    ```
 
-3. Set up environment variables:
+4. Set up environment variables:
 
    ```
    # Create a .env file with:
-   LLM_API_KEY=your_api_key_here
+   OPENAI_API_KEY=your_api_key_here
    ```
 
-4. Start the backend server:
+5. Start the backend server:
    ```
    uvicorn app:app --reload
    ```
@@ -70,18 +84,28 @@ In this game, you encounter a thug who wants to steal your purse. Your goal is t
    cd frontend
    ```
 
-3. Start a development server:
+3. Install dependencies (if applicable):
+
+   ```
+   npm install
+   ```
+
+4. Start the development server:
 
    ```
    # Using Python:
    python -m http.server
    # Or using Node.js:
+   npm run dev
+   # Or with a simple server:
    npx serve
    ```
 
-4. Open your browser and navigate to:
+5. Open your browser and navigate to:
    ```
-   http://localhost:8000
+   http://localhost:8000  # Python http.server
+   # or
+   http://localhost:3000  # Node.js server (port may vary)
    ```
 
 ## Usage
@@ -91,9 +115,22 @@ In this game, you encounter a thug who wants to steal your purse. Your goal is t
 3. Try to remain calm and confident while responding to the thug's demands
 4. Your emotional state and verbal responses will influence the outcome
 
+## Screenshots
+
+![Picture](assets/img-3.png)
+
+![Picture](assets/img-1.png)
+
+![Picture](assets/img-2.png)
+
 ## Development
 
-See the technical documentation in `docs/` for implementation details.
+For detailed implementation information, refer to the documentation in each module.
+
+## Deployed Version
+
+The live version of this project is available at:
+[https://supercell-hackathon.vercel.app/](https://supercell-hackathon.vercel.app/)
 
 ## License
 

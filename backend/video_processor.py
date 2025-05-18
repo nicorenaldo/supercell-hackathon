@@ -1,7 +1,7 @@
 import os
 
 from moviepy import VideoFileClip
-from recording_manager.manager import RecordingManager, RecordingResult
+from recording import RecordingManager, RecordingResult
 import whisper
 import cv2
 from deepface import DeepFace
@@ -12,6 +12,15 @@ import subprocess
 from models import DialogInput
 
 logger = logging.getLogger(__name__)
+# Set logger level to DEBUG for more detailed output
+logger.setLevel(logging.DEBUG)
+
+# Add a stream handler if none exists
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
 
 class VideoProcessor:
@@ -58,7 +67,12 @@ class VideoProcessor:
             Path to the extracted audio file
         """
         try:
-            # First try with moviepy
+            # For WebM files, use FFmpeg directly as it handles WebM better
+            if video_path.lower().endswith(".webm"):
+                logger.info("WebM file detected, using FFmpeg directly")
+                return self._extract_audio_ffmpeg(video_path, output_audio)
+
+            # For other formats, try MoviePy first
             clip = VideoFileClip(video_path)
             if clip.audio is not None:
                 clip.audio.write_audiofile(output_audio, logger=None)
@@ -66,44 +80,98 @@ class VideoProcessor:
 
             # If moviepy fails to extract audio (common on M-series Macs), try ffmpeg
             logger.info("MoviePy couldn't extract audio, trying ffmpeg")
-            try:
-                # Check if ffmpeg is installed
-                subprocess.run(["which", "ffmpeg"], check=True, capture_output=True)
+            return self._extract_audio_ffmpeg(video_path, output_audio)
 
-                # Use ffmpeg to extract audio
-                cmd = [
-                    "ffmpeg",
-                    "-i",
-                    video_path,
-                    "-q:a",
-                    "0",
-                    "-map",
-                    "a",
-                    "-y",  # Overwrite if exists
-                    output_audio,
-                ]
-
-                subprocess.run(cmd, check=True, capture_output=True)
-
-                # Verify the output file exists
-                if os.path.exists(output_audio) and os.path.getsize(output_audio) > 0:
-                    logger.info(f"Successfully extracted audio to {output_audio} using ffmpeg")
-                    return output_audio
-                else:
-                    logger.warning("ffmpeg didn't produce a valid audio file")
-            except subprocess.CalledProcessError as e:
-                logger.error(f"ffmpeg audio extraction failed: {e}")
-            except Exception as e:
-                logger.error(f"Error in ffmpeg audio extraction: {e}")
-
+        except Exception as e:
+            logger.error(f"Error extracting audio: {str(e)}")
             # If all extraction methods fail, create a silent audio file
             logger.warning("No audio detected in video - creating silent audio")
             self._create_silent_audio(output_audio, 10)  # Create 10 seconds of silence
             return output_audio
 
+    def _extract_audio_ffmpeg(self, video_path: str, output_audio: str) -> str:
+        """
+        Extract audio using FFmpeg with optimized settings for WebM files
+
+        Args:
+            video_path: Path to the video file
+            output_audio: Path where the extracted audio will be saved
+
+        Returns:
+            Path to the extracted audio file
+        """
+        try:
+            # Check if ffmpeg is installed
+            subprocess.run(["which", "ffmpeg"], check=True, capture_output=True)
+
+            # Use ffmpeg to extract audio with optimized settings
+            cmd = [
+                "ffmpeg",
+                "-i",
+                video_path,
+                "-vn",  # Skip video
+                "-acodec",
+                "pcm_s16le",  # Convert to WAV format
+                "-ar",
+                "44100",  # Sample rate
+                "-ac",
+                "1",  # Mono
+                "-y",  # Overwrite if exists
+                output_audio,
+            ]
+
+            # Add specific options for WebM files
+            if video_path.lower().endswith(".webm"):
+                # Insert WebM-specific options after the input file
+                cmd.insert(3, "-map")
+                cmd.insert(4, "0:a:0")  # Explicitly map the first audio stream
+
+            try:
+                subprocess.run(cmd, check=True, capture_output=True)
+            except subprocess.CalledProcessError as e:
+                stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else "Unknown error"
+                logger.error(f"ffmpeg command failed: {stderr}")
+
+                # Try alternate approach for WebM with opus codec
+                if video_path.lower().endswith(".webm"):
+                    logger.info("Trying alternate approach for WebM with opus codec")
+                    alt_cmd = [
+                        "ffmpeg",
+                        "-i",
+                        video_path,
+                        "-vn",
+                        "-af",
+                        "aformat=s16:44100",  # Convert audio format
+                        "-y",
+                        output_audio,
+                    ]
+                    try:
+                        subprocess.run(alt_cmd, check=True, capture_output=True)
+                    except subprocess.CalledProcessError as alt_e:
+                        alt_stderr = (
+                            alt_e.stderr.decode("utf-8", errors="replace")
+                            if alt_e.stderr
+                            else "Unknown error"
+                        )
+                        logger.error(f"Alternative ffmpeg command failed: {alt_stderr}")
+                        raise ValueError(f"ffmpeg error: {alt_stderr}")
+                else:
+                    raise ValueError(f"ffmpeg error: {stderr}")
+
+            # Verify the output file exists
+            if os.path.exists(output_audio) and os.path.getsize(output_audio) > 0:
+                logger.info(f"Successfully extracted audio to {output_audio} using ffmpeg")
+                return output_audio
+            else:
+                logger.warning("ffmpeg didn't produce a valid audio file")
+                raise ValueError("ffmpeg produced an empty audio file")
+
+        except subprocess.CalledProcessError as e:
+            logger.error(f"ffmpeg audio extraction failed: {e}")
+            raise ValueError(f"ffmpeg error: {e}")
         except Exception as e:
-            logger.error(f"Error extracting audio: {str(e)}")
-            raise ValueError(f"Failed to extract audio from video: {str(e)}")
+            logger.error(f"Error in ffmpeg audio extraction: {e}")
+            raise ValueError(f"Error in ffmpeg audio extraction: {e}")
 
     def _create_silent_audio(self, output_path: str, duration: int = 10):
         """Create a silent audio file for processing when no audio is available"""
@@ -113,7 +181,11 @@ class VideoProcessor:
                 "-f",
                 "lavfi",
                 "-i",
-                f"anullsrc=r=44100:cl=stereo:d={duration}",
+                f"anullsrc=r=44100:cl=mono:d={duration}",
+                "-c:a",
+                "pcm_s16le",  # WAV format
+                "-ar",
+                "44100",
                 "-y",  # Overwrite if exists
                 output_path,
             ]
@@ -142,7 +214,7 @@ class VideoProcessor:
             return []
 
         try:
-            model = whisper.load_model("base")
+            model = whisper.load_model("base.en")
             result = model.transcribe(audio_path, word_timestamps=True)
             return result["segments"]
         except Exception as e:
@@ -165,26 +237,43 @@ class VideoProcessor:
             List of tuples containing frame paths, start time, end time, and text
         """
         video_base_dir = os.path.dirname(video_path)
-        video = cv2.VideoCapture(video_path)
-        fps = video.get(cv2.CAP_PROP_FPS)
-        frame_interval_sec = frame_interval_ms / 1000  # Convert ms to seconds
-
         frame_data = []
+        total_frames_extracted = 0
+
+        # Create frame directory
+        frame_dir = os.path.join(video_base_dir, "frames")
+        os.makedirs(frame_dir, exist_ok=True)
 
         # If segments are empty (no audio), use default time ranges
         if not segments:
-            # Create artificial segments every 3 seconds for a 30-second window
-            video_length = int(video.get(cv2.CAP_PROP_FRAME_COUNT) / fps)
+            # Create artificial segments every 3 seconds
+            try:
+                # Try to get video duration
+                cap = cv2.VideoCapture(video_path)
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                if fps <= 0:
+                    fps = 30
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                video_duration = total_frames / fps
+                cap.release()
+            except Exception as e:
+                logger.error(f"Error getting video duration: {e}")
+                video_duration = 30  # Default 30 seconds
+
+            video_length = int(video_duration)
             segment_duration = 3
             artificial_segments = []
 
+            # Create segments from 0 to the video length
             for i in range(0, min(30, video_length), segment_duration):
                 artificial_segments.append(
                     {"start": i, "end": i + segment_duration, "text": ""}  # Empty text
                 )
 
             segments = artificial_segments
+            logger.debug(f"No audio segments found. Created {len(segments)} artificial segments.")
 
+        # Process each segment
         for i, seg in enumerate(segments):
             segment_frames = []
             start_time = seg["start"]
@@ -193,15 +282,17 @@ class VideoProcessor:
 
             # Skip very short segments
             if duration < 0.3:  # Skip segments shorter than 300ms
+                logger.debug(f"Skipping segment {i} - too short: {duration:.2f}s")
                 continue
 
-            # Calculate FROM (25%) and TO (75%) timestamps
+            # Calculate FROM (33%) and TO (66%) timestamps
             from_timestamp = start_time + (duration * 0.33)
             to_timestamp = start_time + (duration * 0.66)
 
             # Calculate timestamps at regular intervals between FROM and TO
             timestamps = []
             current_time = from_timestamp
+            frame_interval_sec = frame_interval_ms / 1000  # Convert ms to seconds
             while current_time <= to_timestamp:
                 timestamps.append(current_time)
                 current_time += frame_interval_sec
@@ -210,28 +301,242 @@ class VideoProcessor:
             if not timestamps and duration > 0.3:
                 timestamps = [start_time + duration / 2]  # Take the middle
 
-            # Extract frames at calculated timestamps
-            frame_dir = os.path.join(video_base_dir, "frames")
-            os.makedirs(frame_dir, exist_ok=True)
+            logger.debug(
+                f"Segment {i}: duration={duration:.2f}s, frames to extract={len(timestamps)}"
+            )
 
-            for j, timestamp in enumerate(timestamps):
-                frame_num = int(timestamp * fps)
-                video.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-                ret, frame = video.read()
-                if ret:
-                    # Check if frame is not black or nearly black
-                    if not self._is_black_frame(frame):
-                        path = f"{frame_dir}/frame_{i}_{j}.jpg"
-                        cv2.imwrite(path, frame)
-                        segment_frames.append(path)
+            # Extract frames for this segment - create a new VideoCapture for each segment
+            try:
+                # Open a new video capture for each segment to avoid issues with seeking
+                video = cv2.VideoCapture(video_path)
+                fps = video.get(cv2.CAP_PROP_FPS)
+                if fps <= 0:
+                    logger.warning(f"Invalid fps value: {fps}, defaulting to 30")
+                    fps = 30
 
-            if segment_frames:
-                frame_data.append((segment_frames, seg["start"], seg["end"], seg["text"]))
+                valid_frames = 0
+                frame_count = 0
 
-        video.release()
+                for timestamp in timestamps:
+                    # Calculate frame number
+                    frame_num = int(timestamp * fps)
+
+                    # Method 1: Seek directly to the specific frame number
+                    if video.set(cv2.CAP_PROP_POS_FRAMES, frame_num):
+                        ret, frame = video.read()
+                        if ret and frame is not None:
+                            # Success with method 1
+                            pass
+                        else:
+                            # Method 2: Seek using milliseconds
+                            video.set(cv2.CAP_PROP_POS_MSEC, timestamp * 1000)
+                            ret, frame = video.read()
+
+                            if not ret or frame is None:
+                                # Try with a fresh video capture instance for this particular frame
+                                video.release()
+                                video = cv2.VideoCapture(video_path)
+                                video.set(cv2.CAP_PROP_POS_MSEC, timestamp * 1000)
+                                ret, frame = video.read()
+
+                                if not ret or frame is None:
+                                    # Method 3: Try to get nearest frame with offsets
+                                    found = False
+                                    for offset in [-5, -2, 2, 5, 10, 20]:
+                                        video.set(
+                                            cv2.CAP_PROP_POS_FRAMES, max(0, frame_num + offset)
+                                        )
+                                        ret, frame = video.read()
+                                        if ret and frame is not None:
+                                            found = True
+                                            break
+
+                                    if not found:
+                                        logger.debug(
+                                            f"All methods failed for timestamp {timestamp:.2f}s"
+                                        )
+                                        continue
+                    else:
+                        # Direct frame seeking failed, try time-based seeking
+                        video.set(cv2.CAP_PROP_POS_MSEC, timestamp * 1000)
+                        ret, frame = video.read()
+
+                        if not ret or frame is None:
+                            logger.debug(f"Failed to read frame at time {timestamp:.2f}s")
+                            continue
+
+                    # If we got a frame, process it
+                    if ret and frame is not None:
+                        # Check if frame is not black or nearly black
+                        if not self._is_black_frame(frame):
+                            path = f"{frame_dir}/frame_{i}_{frame_count}.jpg"
+                            cv2.imwrite(path, frame)
+                            segment_frames.append(path)
+                            valid_frames += 1
+                        else:
+                            logger.debug(f"Frame at {timestamp:.2f}s is too dark, skipping")
+                    else:
+                        logger.debug(f"Failed to read frame at timestamp {timestamp:.2f}s")
+
+                    frame_count += 1
+
+                # Close the video capture for this segment
+                video.release()
+
+                total_frames_extracted += valid_frames
+                logger.debug(
+                    f"Segment {i}: extracted {valid_frames} valid frames out of {len(timestamps)} timestamps"
+                )
+
+                if segment_frames:
+                    frame_data.append((segment_frames, seg["start"], seg["end"], seg["text"]))
+                else:
+                    logger.warning(f"No valid frames extracted for segment {i}")
+
+            except Exception as e:
+                logger.error(f"Error processing segment {i}: {str(e)}")
+                # Ensure video is released in case of exception
+                try:
+                    video.release()
+                except:
+                    pass
+
+        logger.info(f"Total frames extracted across all segments: {total_frames_extracted}")
+        logger.info(f"Total segments with frames: {len(frame_data)} out of {len(segments)}")
+
+        # If no frames were extracted at all, try a more aggressive approach
+        if total_frames_extracted < 2:
+            logger.warning(
+                "No frames extracted with regular method, trying alternative extraction method"
+            )
+            alt_frames = self._extract_frames_alternative(video_path, segments)
+            if alt_frames:
+                logger.info(f"Alternative method extracted {len(alt_frames)} segments with frames")
+                frame_data = alt_frames
+
         return frame_data
 
-    def _is_black_frame(self, frame, threshold: int = 20) -> bool:
+    def _extract_frames_alternative(
+        self, video_path: str, segments: List[Dict[str, Any]]
+    ) -> List[Tuple[List[str], float, float, str]]:
+        """
+        Alternative method to extract frames using FFmpeg for problematic videos.
+
+        Args:
+            video_path: Path to the video file
+            segments: List of segments with start and end times
+
+        Returns:
+            List of tuples containing frame paths, start time, end time, and text
+        """
+        video_base_dir = os.path.dirname(video_path)
+        frame_dir = os.path.join(video_base_dir, "frames")
+        os.makedirs(frame_dir, exist_ok=True)
+
+        frame_data = []
+        total_frames = 0
+
+        try:
+            # Get video duration using FFmpeg
+            cmd = [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                video_path,
+            ]
+
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                duration = float(result.stdout.strip())
+                logger.debug(f"Video duration from FFmpeg: {duration}s")
+            except (subprocess.SubprocessError, ValueError) as e:
+                logger.warning(f"Failed to get duration with FFmpeg: {e}")
+                # Estimate duration based on segments
+                if segments:
+                    duration = max(seg["end"] for seg in segments) + 1
+                else:
+                    duration = 30  # Default 30 seconds
+
+            # Create sampling points (one frame every 2 seconds if no segments)
+            if not segments:
+                # Create artificial segments
+                sample_interval = 2  # seconds
+                artificial_segments = []
+                for t in range(0, int(duration), sample_interval):
+                    artificial_segments.append({"start": t, "end": t + sample_interval, "text": ""})
+                segments = artificial_segments
+
+            # Process each segment
+            for i, seg in enumerate(segments):
+                segment_frames = []
+                start_time = seg["start"]
+                end_time = seg["end"]
+                midpoint = (start_time + end_time) / 2
+
+                # Sample at 33%, 50%, and 66% of the segment
+                timestamps = [
+                    start_time + (end_time - start_time) * 0.33,
+                    start_time + (end_time - start_time) * 0.5,
+                    start_time + (end_time - start_time) * 0.66,
+                ]
+
+                # Extract frames using FFmpeg for each timestamp
+                for j, ts in enumerate(timestamps):
+                    output_path = f"{frame_dir}/alt_frame_{i}_{j}.jpg"
+
+                    try:
+                        # Use FFmpeg to extract the frame
+                        cmd = [
+                            "ffmpeg",
+                            "-ss",
+                            str(ts),
+                            "-i",
+                            video_path,
+                            "-vframes",
+                            "1",
+                            "-q:v",
+                            "2",
+                            "-y",
+                            output_path,
+                        ]
+
+                        subprocess.run(cmd, capture_output=True, check=True)
+
+                        # Verify the extracted frame
+                        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                            # Check if frame is not too dark
+                            img = cv2.imread(output_path)
+                            if img is not None and not self._is_black_frame(img):
+                                segment_frames.append(output_path)
+                                total_frames += 1
+                            else:
+                                logger.debug(f"Extracted frame at {ts:.2f}s is too dark or invalid")
+                                if os.path.exists(output_path):
+                                    os.remove(output_path)
+                        else:
+                            logger.debug(f"Failed to extract frame at {ts:.2f}s")
+                    except subprocess.SubprocessError as e:
+                        logger.warning(f"FFmpeg extraction failed at {ts:.2f}s: {e}")
+
+                if segment_frames:
+                    frame_data.append((segment_frames, start_time, end_time, seg.get("text", "")))
+                    logger.debug(
+                        f"Alternative method: segment {i} extracted {len(segment_frames)} frames"
+                    )
+
+        except Exception as e:
+            logger.error(f"Error in alternative frame extraction: {e}")
+
+        logger.info(
+            f"Alternative extraction method: extracted {total_frames} frames across {len(frame_data)} segments"
+        )
+        return frame_data
+
+    def _is_black_frame(self, frame, threshold: int = 15) -> bool:
         """
         Check if a frame is black or nearly black
 
@@ -243,10 +548,14 @@ class VideoProcessor:
             True if frame is considered black, False otherwise
         """
         # Convert to grayscale and calculate mean brightness
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        mean_brightness = cv2.mean(gray)[0]
+        try:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            mean_brightness = cv2.mean(gray)[0]
 
-        return mean_brightness < threshold
+            return mean_brightness < threshold
+        except Exception as e:
+            logger.warning(f"Error checking frame brightness: {e}")
+            return False  # If we can't check, assume it's not black
 
     def detect_emotions(
         self, frames: List[Tuple[List[str], float, float, str]]
@@ -262,49 +571,100 @@ class VideoProcessor:
             List of dictionaries with timestamps, text, and detailed emotion data
         """
         results = []
-        for frame_paths, start, end, text in frames:
+        logger.info(f"Starting emotion detection on {len(frames)} segments")
+
+        # Define detection backends to try in order of preference
+        backends = ["opencv", "retinaface", "ssd", "mtcnn", "mediapipe"]
+        default_backend = "opencv"
+        detected_frames_count = 0
+        total_frames_analyzed = 0
+
+        for idx, (frame_paths, start, end, text) in enumerate(frames):
             # Skip segments with no valid frames
             if not frame_paths:
+                logger.warning(f"Segment {idx}: No frames to analyze")
                 continue
 
             emotion_probs_all = []
             confidence_weights = []
             frame_timestamps = []  # Track relative position of each frame in segment
-
             duration = end - start
+            total_frames_analyzed += len(frame_paths)
 
-            for idx, path in enumerate(frame_paths):
+            # Try to analyze all frames in the segment
+            for frame_idx, path in enumerate(frame_paths):
                 # Estimate frame's position in timeline (for transition analysis)
-                rel_position = idx / (len(frame_paths) - 1 if len(frame_paths) > 1 else 1)
+                rel_position = frame_idx / (len(frame_paths) - 1 if len(frame_paths) > 1 else 1)
                 frame_time = start + (rel_position * duration)
                 frame_timestamps.append(frame_time)
 
-                try:
-                    # Use DeepFace to analyze emotions with detailed analysis
-                    analysis = DeepFace.analyze(
-                        img_path=path,
-                        actions=["emotion"],
-                        enforce_detection=False,
-                        detector_backend="opencv",
-                        silent=True,
-                    )
+                # Try the default backend first
+                detected = False
+                for backend in [default_backend] + [b for b in backends if b != default_backend]:
+                    if detected:
+                        break
 
-                    if analysis and isinstance(analysis, list) and len(analysis) > 0:
-                        # Extract emotion probabilities
-                        emotion_probs = analysis[0]["emotion"]
-                        emotion_probs = {k: float(v) for k, v in emotion_probs.items()}
+                    try:
+                        # Verify the image exists and is valid
+                        if not os.path.exists(path) or os.path.getsize(path) == 0:
+                            logger.warning(f"Frame file missing or empty: {path}")
+                            continue
 
-                        # Extract face detection confidence as weight
-                        region = analysis[0].get("region", {})
-                        confidence = region.get("confidence", 0.5) if region else 0.5
+                        # Try to read the image to verify it's valid
+                        img = cv2.imread(path)
+                        if img is None:
+                            logger.warning(f"Unable to read image: {path}")
+                            continue
 
-                        # Only include results with reasonable confidence
-                        if confidence > 0.2:
-                            emotion_probs_all.append(emotion_probs)
-                            confidence_weights.append(confidence)
-                except Exception as e:
-                    logger.debug(f"Emotion detection failed for frame {path}: {str(e)}")
-                    continue
+                        # For very small images, resize them
+                        height, width = img.shape[:2]
+                        if height < 100 or width < 100:
+                            logger.debug(f"Image too small ({width}x{height}), resizing")
+                            img = cv2.resize(img, (max(width * 2, 200), max(height * 2, 200)))
+                            resized_path = path.replace(".jpg", "_resized.jpg")
+                            cv2.imwrite(resized_path, img)
+                            path = resized_path
+
+                        # Use DeepFace to analyze emotions with detailed analysis
+                        analysis = DeepFace.analyze(
+                            img_path=path,
+                            actions=["emotion"],
+                            enforce_detection=False,
+                            detector_backend=backend,
+                            silent=True,
+                        )
+
+                        if analysis and isinstance(analysis, list) and len(analysis) > 0:
+                            # Extract emotion probabilities
+                            emotion_probs = analysis[0]["emotion"]
+                            emotion_probs = {k: float(v) for k, v in emotion_probs.items()}
+
+                            # Extract face detection confidence as weight
+                            region = analysis[0].get("region", {})
+                            confidence = region.get("confidence", 0.5) if region else 0.5
+
+                            # Only include results with reasonable confidence
+                            if confidence > 0.1:
+                                emotion_probs_all.append(emotion_probs)
+                                confidence_weights.append(confidence)
+                                detected = True
+                                detected_frames_count += 1
+                                break
+                            else:
+                                logger.debug(f"Frame {frame_idx} confidence too low: {confidence}")
+                        else:
+                            logger.debug(
+                                f"No analysis results for frame {frame_idx} with {backend}"
+                            )
+                    except Exception as e:
+                        logger.debug(
+                            f"Emotion detection failed with {backend} for frame {path}: {str(e)}"
+                        )
+                        # Continue to the next backend
+                        continue
+
+                if not detected:
+                    logger.debug(f"Failed to detect emotions in frame {path} with all backends")
 
             # Process results only if we have enough valid data
             if len(emotion_probs_all) >= 2:
@@ -342,13 +702,18 @@ class VideoProcessor:
 
                     # Compute variance for each emotion (showing volatility)
                     emotion_variance = self._calculate_emotion_variance(emotion_probs_all)
+                    # Create a copy of weighted_avg before modifying it
+                    weighted_avg_copy = weighted_avg.copy()
                     for emotion, variance in emotion_variance.items():
-                        weighted_avg[f"{emotion}_variance"] = variance
+                        weighted_avg_copy[f"{emotion}_variance"] = variance
+                    weighted_avg = weighted_avg_copy
+
                 else:
+                    logger.warning(f"Segment {idx}: Total confidence weight is zero")
                     weighted_avg = self._get_default_emotions()
             elif len(emotion_probs_all) == 1:
                 # Just use the single emotion set if only one valid frame
-                weighted_avg = emotion_probs_all[0]
+                weighted_avg = emotion_probs_all[0].copy()  # Create a copy
                 # Normalize to percentage
                 total = sum(weighted_avg.values())
                 if total > 0:
@@ -357,19 +722,38 @@ class VideoProcessor:
                 weighted_avg["transition_score"] = 0.0  # No transitions with one frame
                 weighted_avg["consistent_emotion"] = True
                 # Add zero variance for all emotions
-                for emotion in weighted_avg.keys():
-                    if not emotion.endswith("_variance") and emotion not in [
-                        "stability",
-                        "transition_score",
-                        "consistent_emotion",
-                    ]:
-                        weighted_avg[f"{emotion}_variance"] = 0.0
+                # Create a copy to avoid modifying during iteration
+                emotion_keys = [
+                    k
+                    for k in weighted_avg.keys()
+                    if not k.endswith("_variance")
+                    and k not in ["stability", "transition_score", "consistent_emotion"]
+                ]
+                for emotion in emotion_keys:
+                    weighted_avg[f"{emotion}_variance"] = 0.0
             else:
                 # Default emotions if detection fails
+                logger.warning(f"Segment {idx}: No valid emotion data detected, using defaults")
                 weighted_avg = self._get_default_emotions()
 
             results.append({"time": (start, end), "text": text, "emotions": weighted_avg})
+
+        detection_rate = (
+            (detected_frames_count / total_frames_analyzed * 100)
+            if total_frames_analyzed > 0
+            else 0
+        )
+
         return results
+
+    def _is_default_emotion(self, emotions):
+        """Check if the emotions dict matches the default neutral emotions"""
+        return (
+            emotions.get("neutral", 0) > 90
+            and emotions.get("happy", 0) < 5
+            and emotions.get("angry", 0) < 5
+            and emotions.get("sad", 0) < 5
+        )
 
     def _calculate_emotion_stability(self, emotion_probs_list: List[Dict[str, float]]) -> float:
         """
@@ -518,11 +902,32 @@ class VideoProcessor:
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Video file not found: {video_path}")
 
-        segments = self.transcribe_audio(video_path)
-        frames = self.extract_frames(video_path, segments)
-        emotion_results = self.detect_emotions(frames)
+        logger.info(f"Processing video: {video_path}")
 
-        return DialogInput(video_path, emotion_results)
+        segments = self.transcribe_audio(video_path)
+        logger.info(f"Transcription complete: {len(segments)} segments")
+
+        frames = self.extract_frames(video_path, segments)
+        logger.info(f"Frame extraction complete: {len(frames)} segments with frames")
+
+        emotion_results = self.detect_emotions(frames)
+        logger.info(f"Emotion detection complete: {len(emotion_results)} segments with emotions")
+
+        dialog_input = DialogInput(video_path, emotion_results)
+        logger.info(f"Created DialogInput with {len(dialog_input.sentences)} sentences")
+
+        # Debug - check if we're getting all neutral emotions
+        neutral_count = 0
+        for emotion in dialog_input.emotions:
+            if emotion.neutral > 90 and emotion.happy < 5 and emotion.angry < 5:
+                neutral_count += 1
+
+        if neutral_count == len(dialog_input.emotions) and len(dialog_input.emotions) > 0:
+            logger.warning(
+                f"ALL {len(dialog_input.emotions)} emotions are neutral - this suggests deepface is not working correctly"
+            )
+
+        return dialog_input
 
 
 if __name__ == "__main__":
