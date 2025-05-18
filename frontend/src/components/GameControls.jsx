@@ -17,18 +17,12 @@ export const GameControls = ({ isUploading, isRecording, setIsRecording }) => {
 
   // Show the pointer for first-time users
   useEffect(() => {
-    // Check if this is the first visit
-    const hasVisitedBefore = localStorage.getItem('hasVisitedBefore');
-    if (hasVisitedBefore) {
+    setShowPointer(true);
+    // Hide pointer after 10 seconds
+    const timer = setTimeout(() => {
       setShowPointer(false);
-    } else {
-      setShowPointer(true);
-      // Hide pointer after 10 seconds
-      const timer = setTimeout(() => {
-        setShowPointer(false);
-      }, 10000);
-      return () => clearTimeout(timer);
-    }
+    }, 10000);
+    return () => clearTimeout(timer);
   }, []);
 
   // Handle any audio errors
@@ -78,10 +72,6 @@ export const GameControls = ({ isUploading, isRecording, setIsRecording }) => {
   const startButtonClass = `${buttonBase} bg-green-500/15 text-green-100/70 hover:bg-green-500/30 hover:text-green-100 hover:-translate-y-0.5 shadow-md hover:shadow-lg`;
   const stopButtonClass = `${buttonBase} bg-red-500/15 text-red-100/70 hover:bg-red-500/30 hover:text-red-100 hover:-translate-y-0.5 shadow-md hover:shadow-lg`;
 
-  // Pointer styles
-  const pointerClass =
-    'absolute animate-bounce text-yellow-300 text-3xl -mb-10 bottom-0';
-
   return (
     <>
       <div className='flex gap-3 p-3 bg-black/45 rounded-xl shadow-lg z-10 backdrop-blur-sm max-w-sm mx-auto whitespace-nowrap relative'>
@@ -89,16 +79,20 @@ export const GameControls = ({ isUploading, isRecording, setIsRecording }) => {
           <div className='relative'>
             {showPointer && (
               <div
-                className={pointerClass}
+                className={
+                  'absolute animate-bounce text-yellow-300 text-3xl -mb-20 bottom-0 text-center'
+                }
                 style={{
-                  left: '50%',
+                  left: '-50%',
                   transform: 'translateX(-50%) translateY(100%)',
                 }}
               >
-                ↑ <span className='text-sm'>Click here to start!</span>
-                <span className='text-sm'>
+                <p>
+                  ↑ <span className='text-sm'>Click here to start!</span>
+                </p>
+                <p className='text-sm'>
                   Use big expressions to have the best experience!
-                </span>
+                </p>
               </div>
             )}
             <button
