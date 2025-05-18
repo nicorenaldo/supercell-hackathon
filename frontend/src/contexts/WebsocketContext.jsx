@@ -39,6 +39,14 @@ export const WebsocketProvider = ({ children }) => {
             suspicion_level: data?.suspicion_level ?? 0,
           },
         ]);
+      } else if (data.user_dialog) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            type: 'user_dialog',
+            text: data.user_dialog,
+          },
+        ]);
       } else if (data.game_over) {
         setMessages((prev) => [
           ...prev,

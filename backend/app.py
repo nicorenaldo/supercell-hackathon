@@ -139,9 +139,17 @@ async def process_recording(recording_result: RecordingResult, game_id: str):
         logger.warning(f"No active WebSocket connection for game {game_id}")
         return
 
-    game_response: GameResponse = game_engine.process_recording(recording_result, game_id)
+    dialog_input, game_response = game_engine.process_recording(recording_result, game_id)
 
     try:
+        if dialog_input.sentences:
+            for sentence in dialog_input.sentences:
+                await websocket.send_json(
+                    {
+                        "user_dialog": sentence,
+                    }
+                )
+
         if game_response.game_over:
             await websocket.send_json(
                 {

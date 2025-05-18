@@ -114,6 +114,7 @@ This project is an interactive web game that uses emotion detection and speech r
 2. The game will start automatically
 3. Try to remain calm and confident while responding to the thug's demands
 4. Your emotional state and verbal responses will influence the outcome
+5. **For best results**: Don't be shy with your facial expressions! The emotion detection works better with more pronounced expressions, so feel free to exaggerate your emotions to see a stronger impact on gameplay.
 
 ## Screenshots
 

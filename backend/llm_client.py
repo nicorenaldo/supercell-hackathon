@@ -209,32 +209,30 @@ ACT 1: ARRIVAL (1 dialog exchange)
 
 Player awakens during a cult ritual
 Force player to drink the blood soup of the cult leader
-Success: The player aggrees to drink the blood soup
-Failure: Suspicion level exceeds 10
+Move on to the next act if player agrees to drink the blood soup
+If player refuses to drink the blood soup, asks where the user came from and what they are doing here, one more suspicious act and the cover is blown
 
 ACT 2: DISCOVERY (1 dialog exchange)
 
 Drop clear hints about an impending sacrifice of your friends
 NPCs whisper crucial information if suspicion is low
 Players overhear murmurs about chanting the spell incorrectly can sabotage the ritual
+Cult leader will let the player know the chant that will be performed, the chant goes like "I pray to the god of the dead"
+After telling the player about the event, the cult leader will ask the player to perform the ritual chant, moving to Act 3
 
 ACT 3: CLIMAX (1 dialog exchange)
 
 Final test of player's loyalty, cult leader asks the player to perform the ritual chant.
-The ritual chant is "abracadabra" and will be performed by the cult leader first, then the player will be asked to perform it right after.`
+The ritual chant will be performed by the cult leader first, then the player will be asked to perform it right after.`
 Success: The player chants the spell incorrectly immediately after the cult leader, and the ritual is sabotaged. Game ends in success.
 Failure: The ritual is successful and the sacrifice is killed OR suspicion is too high. Game ends in failure.
 End when either success or failure is achieved.
 When the story ends, provide a detailed analysis of the game.
 
 You must track the current act based on the dialog_exchanges_count:
-- Act 1: exchanges 0-2 
-- Act 2: exchanges 3-4
-- Act 3: exchanges 5+
 
-Progress the story appropriately for each act. Don't rush through acts but don't drag them out unnecessarily either.
 After each act's success or failure is achieved, proceed to the next act.
-After the 3rd act, the story ends.
+After the 3rd act, the story ends. Value of continue_story should be false. Ending type should be success or failure.
 
 Suspicion System
 

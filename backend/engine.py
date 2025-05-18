@@ -7,6 +7,7 @@ from video_processor import VideoProcessor
 from models import (
     NPC,
     Achievement,
+    DialogInput,
     EndingType,
     GameResponse,
     GameState,
@@ -105,7 +106,9 @@ class GameEngine:
         logger.info(f"Created new game session: {game_id}")
         return game_id, initial_dialog
 
-    def process_recording(self, recording_result: RecordingResult, game_id: str) -> GameResponse:
+    def process_recording(
+        self, recording_result: RecordingResult, game_id: str
+    ) -> Tuple[DialogInput, GameResponse]:
         """
         Process the recording and send the results to the LLM
 
@@ -189,10 +192,10 @@ class GameEngine:
                 analysis=llm_result.analysis,
             )
 
-            return response
+            return dialog_input, response
         except Exception as e:
             logger.error(f"Error processing recording for game {game_id}: {e}")
-            return GameResponse(
+            return DialogInput(sentences=[], video_file=""), GameResponse(
                 dialogs=[],
                 suspicion_level=0,
                 game_over=True,

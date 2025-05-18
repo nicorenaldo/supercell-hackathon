@@ -3,8 +3,12 @@ import { useEffect, useRef } from 'react';
 export const ChatBox = ({ messages, isConnected }) => {
   const chatBoxRef = useRef(null);
 
-  const latestSuspicionPoint =
-    messages[messages.length - 1]?.suspicion_level ?? 5;
+  let latestSuspicionPoint = 5;
+  for (const message of messages) {
+    if (message.type === 'dialog') {
+      latestSuspicionPoint = message.suspicion_level;
+    }
+  }
 
   useEffect(() => {
     if (chatBoxRef.current) {
@@ -21,6 +25,16 @@ export const ChatBox = ({ messages, isConnected }) => {
             className='p-2 rounded-md bg-blue-600/60 max-w-[90%] break-words'
           >
             <span className='font-bold text-yellow-300'>{message.npc_id}:</span>{' '}
+            {message.text}
+          </div>
+        );
+      case 'user_dialog':
+        return (
+          <div
+            key={index}
+            className='p-2 rounded-md bg-green-600/60 max-w-[90%] break-words'
+          >
+            <span className='font-bold text-yellow-300'>You:</span>{' '}
             {message.text}
           </div>
         );
